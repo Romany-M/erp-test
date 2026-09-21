@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { todayISO } from '../utils/constants';
 import { telHref, whatsappHref } from '../utils/phone';
+import { printHousingDirectory } from '../utils/pdfDocs';
 
 const EMPTY_FORM = { buildingName: '', area: '', apartmentNumber: '', rooms: 1, notes: '' };
 
@@ -220,6 +221,18 @@ export default function HousingPage() {
     }
   };
 
+  // دليل السكن PDF: بنفس الفلاتر المعروضة (المنطقة / البحث)، وساكنين نشطين بس
+  const handleDirectoryPdf = () => {
+    const list = filteredApartments.map(a => ({
+      buildingName: a.buildingName, area: a.area, apartmentNumber: a.apartmentNumber,
+      rooms: a.rooms, notes: a.notes,
+      occupants: a.occupants.filter(w => w.status === 'active'),
+    }));
+    if (list.length === 0) { alert('لا توجد شقق لطباعتها'); return; }
+    const filtersText = [areaFilter && `المنطقة: ${areaFilter}`, search && `بحث: ${search}`].filter(Boolean).join(' — ');
+    printHousingDirectory({ apartments: list, filtersText });
+  };
+
   const aptLine = (apt) => [apt.buildingName, apt.area, `شقة ${apt.apartmentNumber}`].filter(Boolean).join(' — ');
 
   return (
@@ -229,11 +242,19 @@ export default function HousingPage() {
           <h2 className="text-2xl font-bold text-gray-800">السكن</h2>
           <p className="text-xs text-gray-400 mt-1">الشقق اللي فيها عمال — مين ساكن فين، ومين غايب النهارده</p>
         </div>
-        <button onClick={openNew}
-          className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          شقة جديدة
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={handleDirectoryPdf} disabled={apartments.length === 0}
+            title="حفظ دليل السكن كملف PDF (بنفس الفلاتر المعروضة)"
+            className="bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-primary-700 border border-primary-300 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            تحميل دليل السكن PDF
+          </button>
+          <button onClick={openNew}
+            className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            شقة جديدة
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

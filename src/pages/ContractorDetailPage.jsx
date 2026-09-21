@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { todayISO, PAYMENT_TYPES } from '../utils/constants';
+import { printContractorArchive, printContractorReceipt } from '../utils/pdfDocs';
 
 // حساب مقاول واحد بس: كل الأرقام هنا محسوبة على مبالغ المقاول ده لوحده،
 // مفيش أي جمع مع مقاولين تانيين.
@@ -73,6 +74,15 @@ export default function ContractorDetailPage() {
     } catch (err) {
       alert('تعذر الحذف: ' + (err?.message || 'خطأ غير معروف'));
     }
+  };
+
+  const handleArchivePdf = () => {
+    if (paidPayments.length === 0) return;
+    printContractorArchive({ contractor, payments: paidPayments });
+  };
+  const handleReceipt = () => {
+    if (paidPayments.length === 0) return;
+    printContractorReceipt({ contractor, payments: paidPayments });
   };
 
   const paymentLabel = (type) => (PAYMENT_TYPES.find(x => x.value === type) || PAYMENT_TYPES[0]).label;
@@ -182,9 +192,25 @@ export default function ContractorDetailPage() {
             <h3 className="font-bold text-gray-800 text-lg">الأرشيف — ما تم صرفه</h3>
             <p className="text-xs text-gray-400 mt-1">مبالغ {contractor.name} المدفوعة فقط</p>
           </div>
-          <div className="text-left">
-            <p className="text-xs text-gray-500">إجمالي ما تم صرفه</p>
-            <p className="text-xl font-bold text-green-700">{totalPaid.toLocaleString('ar-EG')} ج.م</p>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex gap-2">
+              <button onClick={handleArchivePdf} disabled={paidPayments.length === 0}
+                title="حفظ أرشيف المقاول كملف PDF"
+                className="px-3 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                تحميل الأرشيف PDF
+              </button>
+              <button onClick={handleReceipt} disabled={paidPayments.length === 0}
+                title="طباعة إيصال بكل الأرشيف مع توقيع المقاول والمحاسب والختم"
+                className="px-3 py-2 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-primary-700 border border-primary-300 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                طباعة إيصال
+              </button>
+            </div>
+            <div className="text-left">
+              <p className="text-xs text-gray-500">إجمالي ما تم صرفه</p>
+              <p className="text-xl font-bold text-green-700">{totalPaid.toLocaleString('ar-EG')} ج.م</p>
+            </div>
           </div>
         </div>
         {paidPayments.length === 0 ? (

@@ -336,6 +336,15 @@ export default function AttendancePage() {
     return { present, absent, totalOvertime, totalPillars, totalDeductions, total: filteredWorkers.length };
   }, [filteredWorkers, localState, todayRecords]);
 
+  // سلف اليوم للعمال المعروضين. مش بتتخصم من "إجمالي اليوم" (اللي هو اللي اتكسب)،
+  // بس بنعرضها والصافي بعدها تحته.
+  const advancesTotalForDay = useMemo(() => {
+    const ids = new Set(filteredWorkers.map(w => w.id));
+    return advances
+      .filter(a => a.date === selectedDate && ids.has(a.workerId))
+      .reduce((sum, a) => sum + (a.amount || 0), 0);
+  }, [advances, filteredWorkers, selectedDate]);
+
   const calculateSummaryTotal = () => {
     let total = 0;
     filteredWorkers.forEach(w => {
@@ -434,6 +443,11 @@ export default function AttendancePage() {
           <div className="bg-orange-50 rounded-lg p-3 text-center">
             <p className="text-xs text-orange-600">إجمالي اليوم</p>
             <p className="text-xl font-bold text-orange-700">{calculateSummaryTotal().toLocaleString('ar-EG')} ج.م</p>
+            {advancesTotalForDay > 0 && (
+              <p className="text-[10px] text-orange-700 mt-1 leading-tight">
+                سلف اليوم {advancesTotalForDay.toLocaleString('ar-EG')} — الصافي بعد السلف {(calculateSummaryTotal() - advancesTotalForDay).toLocaleString('ar-EG')}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <button onClick={() => setAllForRole(selectedRole, 'present')}

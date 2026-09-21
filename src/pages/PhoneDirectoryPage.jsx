@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ROLES } from '../utils/constants';
 import { telHref, whatsappHref } from '../utils/phone';
+import { printPhoneDirectory } from '../utils/pdfDocs';
 
 const n = (v) => Number(v || 0).toLocaleString('ar-EG');
 const norm = (v) => String(v || '').trim().toLowerCase();
@@ -48,6 +49,21 @@ export default function PhoneDirectoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, search, role, onlyMissing, housingApartments]);
 
+  // دليل الهاتف PDF: بنفس الفلاتر المعروضة
+  const handlePdf = () => {
+    if (list.length === 0) { alert('لا يوجد عمال لطباعتهم'); return; }
+    const filtersText = [
+      role && `الفئة: ${role}`,
+      !showInactive && 'النشطين فقط',
+      onlyMissing && 'بدون رقم فقط',
+      search && `بحث: ${search}`,
+    ].filter(Boolean).join(' — ');
+    printPhoneDirectory({
+      workers: list.map(w => ({ name: w.name, code: w.code, role: w.role, phone: w.phone, apartmentLabel: aptLabel(w.apartmentId) })),
+      filtersText,
+    });
+  };
+
   const startEdit = (w) => { setEditingId(w.id); setEditValue(w.phone || ''); };
   const cancelEdit = () => { setEditingId(null); setEditValue(''); };
 
@@ -65,9 +81,17 @@ export default function PhoneDirectoryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800">دليل الهاتف</h2>
-        <p className="text-xs text-gray-400 mt-1">أسماء وأرقام العمال — اضغط على الرقم للاتصال أو الواتساب</p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">دليل الهاتف</h2>
+          <p className="text-xs text-gray-400 mt-1">أسماء وأرقام العمال — اضغط على الرقم للاتصال أو الواتساب</p>
+        </div>
+        <button onClick={handlePdf} disabled={list.length === 0}
+          title="حفظ الدليل كملف PDF (بنفس الفلاتر المعروضة)"
+          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+          تحميل دليل الهاتف PDF
+        </button>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
