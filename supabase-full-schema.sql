@@ -273,6 +273,24 @@ create table if not exists public.contractor_payments (
 );
 create index if not exists contractor_payments_contractor_idx on public.contractor_payments(contractor_id);
 
+-- --------------------------------------------------------------------------
+-- 10) ترقيم إيصالات المقاولين (رقم الإيصال يتولّد لوحده ومايتكررش)
+--    كل ضغطة على "طباعة إيصال" بتاخد رقم جديد تلقائي من الترقيم ده وتتسجّل هنا.
+-- --------------------------------------------------------------------------
+create sequence if not exists public.contractor_receipt_number_seq start 1;
+
+create table if not exists public.contractor_receipts (
+  id             uuid primary key default gen_random_uuid(),
+  receipt_number bigint not null default nextval('public.contractor_receipt_number_seq') unique,
+  contractor_id  uuid references public.contractors(id) on delete set null,
+  contractor_name text not null,
+  total_amount   numeric(12,2) not null default 0,
+  payments_count integer not null default 0,
+  created_at     timestamptz not null default now()
+);
+create index if not exists contractor_receipts_contractor_idx on public.contractor_receipts(contractor_id);
+
+
 -- ==========================================================================
 -- الأمان (Row Level Security)
 --   * المستخدم العادي (الأدمن/المحاسب): صلاحية كاملة على كل الجداول.
@@ -301,7 +319,7 @@ declare
     'plots', 'pillar_buildings', 'pillars',
     'payments', 'payroll_range',
     'food_expenses', 'purchases', 'budgets', 'weekly_budgets', 'budget_history',
-    'contractors', 'contractor_payments'
+    'contractors', 'contractor_payments', 'contractor_receipts'
   ];
 begin
   foreach t in array all_tables loop
@@ -345,6 +363,7 @@ create policy qr_only_update on public.qr_attendance
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on public.contractor_receipt_number_seq to authenticated;
 
 -- ==========================================================================
 -- (اختياري) حساب المهندس/التايم كيبر (QR فقط)

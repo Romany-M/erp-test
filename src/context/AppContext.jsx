@@ -830,6 +830,26 @@ export function AppProvider({ children }) {
     return row;
   }, []);
 
+  // ---------------- ترقيم إيصالات المقاولين ----------------
+  // كل ضغطة على "طباعة إيصال" بتاخد رقم جديد من الترقيم التلقائي في الداتابيز
+  // (contractor_receipt_number_seq) عشان الرقم مايتكررش حتى لو أكتر من حد بيطبع
+  // في نفس الوقت. الرقم بيتسجّل هنا لسجل تاريخي بس، مش جزء من بيانات المقاول.
+  const issueContractorReceipt = useCallback(async (contractor, payments) => {
+    const totalAmount = payments.reduce((s, p) => s + (p.amount || 0), 0);
+    const { data, error } = await supabase
+      .from('contractor_receipts')
+      .insert({
+        contractor_id: contractor.id,
+        contractor_name: contractor.name,
+        total_amount: totalAmount,
+        payments_count: payments.length,
+      })
+      .select('receipt_number')
+      .single();
+    if (error) { console.error('issue contractor receipt failed:', error); throw error; }
+    return data.receipt_number;
+  }, []);
+
   // ---------------- Housing (السكن) ----------------
   const addApartment = useCallback(
     (apartment) => insertRow('housing_apartments', 'housingApartments', apartment), [insertRow]);
@@ -945,6 +965,7 @@ export function AppProvider({ children }) {
     deleteApartment,
     assignWorkersToApartment,
     setWeeklyBudget,
+    issueContractorReceipt,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

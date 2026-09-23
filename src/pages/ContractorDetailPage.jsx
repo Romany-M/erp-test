@@ -12,7 +12,9 @@ export default function ContractorDetailPage() {
   const {
     contractors, contractorPayments,
     deleteContractor, addContractorPayment, deleteContractorPayment, markContractorPaid,
+    issueContractorReceipt,
   } = useApp();
+  const [printingReceipt, setPrintingReceipt] = useState(false);
 
   const contractor = contractors.find(c => c.id === id);
 
@@ -80,9 +82,18 @@ export default function ContractorDetailPage() {
     if (paidPayments.length === 0) return;
     printContractorArchive({ contractor, payments: paidPayments });
   };
-  const handleReceipt = () => {
-    if (paidPayments.length === 0) return;
-    printContractorReceipt({ contractor, payments: paidPayments });
+  const handleReceipt = async () => {
+    if (paidPayments.length === 0 || printingReceipt) return;
+    setPrintingReceipt(true);
+    let receiptNumber;
+    try {
+      receiptNumber = await issueContractorReceipt(contractor, paidPayments);
+    } catch (err) {
+      console.warn('تعذر الحصول على رقم إيصال تلقائي، هيتطبع الإيصال برقم فاضي تكتبه بإيدك:', err);
+    } finally {
+      setPrintingReceipt(false);
+    }
+    printContractorReceipt({ contractor, payments: paidPayments, receiptNumber });
   };
 
   const paymentLabel = (type) => (PAYMENT_TYPES.find(x => x.value === type) || PAYMENT_TYPES[0]).label;
@@ -200,11 +211,11 @@ export default function ContractorDetailPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                 تحميل الأرشيف PDF
               </button>
-              <button onClick={handleReceipt} disabled={paidPayments.length === 0}
+              <button onClick={handleReceipt} disabled={paidPayments.length === 0 || printingReceipt}
                 title="طباعة إيصال بكل الأرشيف مع توقيع المقاول والمحاسب والختم"
                 className="px-3 py-2 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-primary-700 border border-primary-300 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                طباعة إيصال
+                {printingReceipt ? 'جارِ الترقيم...' : 'طباعة إيصال'}
               </button>
             </div>
             <div className="text-left">

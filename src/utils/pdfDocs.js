@@ -97,7 +97,7 @@ const RECEIPT_CSS = `
   .stamp img { width: 38mm; height: 38mm; transform: rotate(-6deg); }
 `;
 
-export function buildContractorReceiptHtml({ contractor, payments, printedOn }) {
+export function buildContractorReceiptHtml({ contractor, payments, printedOn, receiptNumber }) {
   const rows = archiveRows(payments);
   const total = rows.reduce((s, p) => s + (p.amount || 0), 0);
   const words = amountInArabicWords(total);
@@ -118,7 +118,7 @@ export function buildContractorReceiptHtml({ contractor, payments, printedOn }) 
       <div class="rc-row">
         <div class="rc-field">التاريخ: ${dateAr(printedOn || todayISO())}</div>
         <div class="rc-title">إيصال نقدية</div>
-        <div class="rc-field">رقم الإيصال: <span class="line"></span></div>
+        <div class="rc-field">رقم الإيصال: ${receiptNumber ? `<span class="ltr">${nAr(receiptNumber)}</span>` : '<span class="line"></span>'}</div>
       </div>
       <div class="chips">
         <div class="chip">اسم المقاول <b>${esc(contractor.name)}</b></div>
@@ -157,10 +157,10 @@ export function buildContractorReceiptHtml({ contractor, payments, printedOn }) 
     </div>`;
 }
 
-export function printContractorReceipt({ contractor, payments }) {
+export function printContractorReceipt({ contractor, payments, receiptNumber }) {
   return openPrintWindow({
     title: `إيصال-المقاول-${contractor.name}`,
-    body: buildContractorReceiptHtml({ contractor, payments }),
+    body: buildContractorReceiptHtml({ contractor, payments, receiptNumber }),
     css: RECEIPT_CSS,
   });
 }
