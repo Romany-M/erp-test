@@ -10,7 +10,7 @@ export default function ContractorDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const {
-    contractors, contractorPayments,
+    contractors, contractorPayments, contractorReceipts,
     deleteContractor, addContractorPayment, deleteContractorPayment, markContractorPaid,
     issueContractorReceipt,
   } = useApp();
@@ -29,6 +29,9 @@ export default function ContractorDetailPage() {
   }, [contractorPayments, id]);
 
   const paidPayments = useMemo(() => payments.filter(p => p.paid), [payments]);
+  // الدفعات اللي اتصرفت ولسه ما اتوثقتش في إيصال (receiptId فاضي) — دي اللي بتدخل
+  // في إيصال جديد. أي دفعة دخلت إيصال قبل كده مابتتكررش في إيصال تاني.
+  const unreceiptedPayments = useMemo(() => paidPayments.filter(p => !p.receiptId), [paidPayments]);
   const totalAll = payments.reduce((s, p) => s + (p.amount || 0), 0);
   const totalOutstanding = payments.filter(p => !p.paid).reduce((s, p) => s + (p.amount || 0), 0);
   const totalPaid = paidPayments.reduce((s, p) => s + (p.amount || 0), 0);
@@ -41,6 +44,11 @@ export default function ContractorDetailPage() {
       </div>
     );
   }
+
+  const receiptNumberById = useMemo(
+    () => new Map(contractorReceipts.map(r => [r.id, r.receiptNumber])),
+    [contractorReceipts]
+  );
 
   const setField = (field, value) => setInput(prev => ({ ...prev, [field]: value }));
 
@@ -80,20 +88,30 @@ export default function ContractorDetailPage() {
 
   const handleArchivePdf = () => {
     if (paidPayments.length === 0) return;
-    printContractorArchive({ contractor, payments: paidPayments });
+    const withReceiptNo = paidPayments.map(p => ({
+      ...p, receiptNumber: p.receiptId ? receiptNumberById.get(p.receiptId) : null,
+    }));
+    printContractorArchive({ contractor, payments: withReceiptNo });
   };
   const handleReceipt = async () => {
-    if (paidPayments.length === 0 || printingReceipt) return;
+    if (unreceiptedPayments.length === 0 || printingReceipt) return;
     setPrintingReceipt(true);
-    let receiptNumber;
+    let receipt;
     try {
-      receiptNumber = await issueContractorReceipt(contractor, paidPayments);
+      receipt = await issueContractorReceipt(contractor, unreceiptedPayments);
     } catch (err) {
-      console.warn('تعذر الحصول على رقم إيصال تلقائي، هيتطبع الإيصال برقم فاضي تكتبه بإيدك:', err);
-    } finally {
+      alert('تعذر توثيق الإيصال في الداتابيز: ' + (err?.message || 'خطأ غير معروف') +
+        '\n(لو الرسالة بتقول إن الجدول أو العمود مش موجود، شغّل ملف SQL بتاع ترقيم الإيصالات في Supabase الأول.)');
       setPrintingReceipt(false);
+      return;
     }
-    printContractorReceipt({ contractor, payments: paidPayments, receiptNumber });
+    setPrintingReceipt(false);
+    // إجمالي المستلم من المقاول لحد النهارده (شامل الإيصال ده) — سطر معلوماتي بس،
+    // مش جزء من إقرار الاستلام اللي بيوقّع عليه المقاول (اللي بيوقّع عليه هو الجديد بس).
+    printContractorReceipt({
+      contractor, payments: unreceiptedPayments, receiptNumber: receipt.receiptNumber,
+      historicalTotal: totalPaid,
+    });
   };
 
   const paymentLabel = (type) => (PAYMENT_TYPES.find(x => x.value === type) || PAYMENT_TYPES[0]).label;
@@ -164,6 +182,7 @@ export default function ContractorDetailPage() {
                   <th className="px-4 py-2 text-right font-semibold text-gray-600">المبلغ</th>
                   <th className="px-4 py-2 text-right font-semibold text-gray-600">الصرف</th>
                   <th className="px-4 py-2 text-center font-semibold text-gray-600">الحالة</th>
+                  <th className="px-4 py-2 text-center font-semibold text-gray-600">الإيصال</th>
                   <th className="px-4 py-2 text-center font-semibold text-gray-600">حذف</th>
                 </tr>
               </thead>
@@ -182,6 +201,17 @@ export default function ContractorDetailPage() {
                       }`}>
                         {p.paid ? 'مدفوع' : 'مستحق'}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {!p.paid ? (
+                        <span className="text-gray-300 text-xs">—</span>
+                      ) : p.receiptId ? (
+                        <span className="text-xs font-bold text-primary-700 ltr" dir="ltr">
+                          #{receiptNumberById.get(p.receiptId) ?? '؟'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">بدون إيصال</span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <button onClick={() => { if (window.confirm('هل تريد حذف هذا المبلغ؟')) deleteContractorPayment(p.id); }}
@@ -211,11 +241,16 @@ export default function ContractorDetailPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                 تحميل الأرشيف PDF
               </button>
-              <button onClick={handleReceipt} disabled={paidPayments.length === 0 || printingReceipt}
-                title="طباعة إيصال بكل الأرشيف مع توقيع المقاول والمحاسب والختم"
-                className="px-3 py-2 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-primary-700 border border-primary-300 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+              <button onClick={handleReceipt} disabled={unreceiptedPayments.length === 0 || printingReceipt}
+                title={unreceiptedPayments.length === 0 ? 'كل الدفعات المصروفة موثّقة بإيصالات بالفعل' : `طباعة إيصال بالدفعات الجديدة (${unreceiptedPayments.length}) مع توقيع المقاول والمحاسب والختم`}
+                className="relative px-3 py-2 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-primary-700 border border-primary-300 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                 {printingReceipt ? 'جارِ الترقيم...' : 'طباعة إيصال'}
+                {unreceiptedPayments.length > 0 && (
+                  <span className="absolute -top-2 -left-2 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                    {unreceiptedPayments.length}
+                  </span>
+                )}
               </button>
             </div>
             <div className="text-left">

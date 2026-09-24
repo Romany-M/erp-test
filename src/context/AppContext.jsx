@@ -81,8 +81,13 @@ const MAPS = {
   contractors: [
     ['id', 'id'], ['name', 'name'], ['role', 'role'], ['createdAt', 'created_at'],
   ],
+  contractor_receipts: [
+    ['id', 'id'], ['receiptNumber', 'receipt_number'], ['contractorId', 'contractor_id'],
+    ['contractorName', 'contractor_name'], ['totalAmount', 'total_amount'],
+    ['paymentsCount', 'payments_count'], ['createdAt', 'created_at'],
+  ],
   contractor_payments: [
-    ['id', 'id'], ['contractorId', 'contractor_id'], ['date', 'date'], ['amount', 'amount'],
+    ['id', 'id'], ['contractorId', 'contractor_id'], ['receiptId', 'receipt_id'], ['date', 'date'], ['amount', 'amount'],
     ['paymentType', 'payment_type'], ['paidBy', 'paid_by'], ['paid', 'paid'],
     ['paidAt', 'paid_at'], ['createdAt', 'created_at'],
   ],
@@ -118,7 +123,7 @@ const UUID_FIELDS = {
   qr_codes: ['workerId'],
   qr_attendance: ['workerId'],
   contractors: [],
-  contractor_payments: ['contractorId'],
+  contractor_payments: ['contractorId', 'receiptId'],
   budget_history: [],
   housing_apartments: [],
   weekly_budgets: [],
@@ -170,6 +175,7 @@ const initialState = {
   qrAttendance: [],
   contractors: [],
   contractorPayments: [],
+  contractorReceipts: [],
   housingApartments: [],
   weeklyBudgets: [],
   payrollRange: { from: '', to: '' },
@@ -263,7 +269,7 @@ export function AppProvider({ children }) {
         workersRes, attendanceRes, advancesRes, custodyRes, foodRes, purchasesRes,
         transfersRes, externalRes, pillarsRes, budgetsRes, budgetHistoryRes,
         paymentsRes, buildingsRes, plotsRes, qrCodesRes, qrAttendanceRes,
-        contractorsRes, contractorPaymentsRes, payrollRangeRes, housingRes, weeklyBudgetsRes,
+        contractorsRes, contractorPaymentsRes, contractorReceiptsRes, payrollRangeRes, housingRes, weeklyBudgetsRes,
       ] = await Promise.all([
         fetchAllRows('workers', { orderBy: { column: 'created_at', ascending: true } }),
         fetchAllRows('attendance'),
@@ -283,6 +289,7 @@ export function AppProvider({ children }) {
         fetchAllRows('qr_attendance'),
         supabase.from('contractors').select('*'),
         supabase.from('contractor_payments').select('*'),
+        supabase.from('contractor_receipts').select('*'),
         supabase.from('payroll_range').select('*').maybeSingle(),
         supabase.from('housing_apartments').select('*'),
         supabase.from('weekly_budgets').select('*'),
@@ -305,6 +312,9 @@ export function AppProvider({ children }) {
 
       if (weeklyBudgetsRes.error) {
         console.warn('weekly_budgets not available yet - run the weekly budget SQL migration:', weeklyBudgetsRes.error);
+      }
+      if (contractorReceiptsRes.error) {
+        console.warn('contractor_receipts not available yet - run the receipt-numbering SQL migration:', contractorReceiptsRes.error);
       }
 
       const budgetsMap = { cash: 0, insta: 0 };
@@ -329,6 +339,7 @@ export function AppProvider({ children }) {
         qrAttendance: fromDbList('qr_attendance', qrAttendanceRes.data),
         contractors: fromDbList('contractors', contractorsRes.data),
         contractorPayments: fromDbList('contractor_payments', contractorPaymentsRes.data),
+        contractorReceipts: contractorReceiptsRes.error ? [] : fromDbList('contractor_receipts', contractorReceiptsRes.data),
         housingApartments: housingRes.error ? [] : fromDbList('housing_apartments', housingRes.data),
         weeklyBudgets: weeklyBudgetsRes.error ? [] : fromDbList('weekly_budgets', weeklyBudgetsRes.data),
         payrollRange: {
@@ -831,23 +842,41 @@ export function AppProvider({ children }) {
   }, []);
 
   // ---------------- ترقيم إيصالات المقاولين ----------------
-  // كل ضغطة على "طباعة إيصال" بتاخد رقم جديد من الترقيم التلقائي في الداتابيز
-  // (contractor_receipt_number_seq) عشان الرقم مايتكررش حتى لو أكتر من حد بيطبع
-  // في نفس الوقت. الرقم بيتسجّل هنا لسجل تاريخي بس، مش جزء من بيانات المقاول.
-  const issueContractorReceipt = useCallback(async (contractor, payments) => {
-    const totalAmount = payments.reduce((s, p) => s + (p.amount || 0), 0);
-    const { data, error } = await supabase
+  // كل إيصال بيوثّق دفعات "جديدة" بس (اللي receipt_id بتاعها لسه فاضي)، عشان مفيش
+  // دفعة تدخل في إيصال أكتر من مرة. الرقم بياخده تلقائي من الترقيم في الداتابيز
+  // (contractor_receipt_number_seq) فمايتكررش حتى لو أكتر من حد بيطبع في نفس الوقت.
+  const issueContractorReceipt = useCallback(async (contractor, newPayments) => {
+    if (!newPayments || newPayments.length === 0) throw new Error('لا يوجد دفعات جديدة لتوثيقها');
+    const totalAmount = newPayments.reduce((s, p) => s + (p.amount || 0), 0);
+
+    const { data: receiptRow, error: receiptErr } = await supabase
       .from('contractor_receipts')
       .insert({
         contractor_id: contractor.id,
         contractor_name: contractor.name,
         total_amount: totalAmount,
-        payments_count: payments.length,
+        payments_count: newPayments.length,
       })
-      .select('receipt_number')
+      .select()
       .single();
-    if (error) { console.error('issue contractor receipt failed:', error); throw error; }
-    return data.receipt_number;
+    if (receiptErr) { console.error('issue contractor receipt failed:', receiptErr); throw receiptErr; }
+
+    const paymentIds = newPayments.map(p => p.id);
+    const { data: updatedRows, error: linkErr } = await supabase
+      .from('contractor_payments')
+      .update({ receipt_id: receiptRow.id })
+      .in('id', paymentIds)
+      .select();
+    if (linkErr) { console.error('link payments to receipt failed:', linkErr); throw linkErr; }
+
+    const receipt = fromDb('contractor_receipts', receiptRow);
+    const updatedById = new Map(fromDbList('contractor_payments', updatedRows).map(p => [p.id, p]));
+    setState(prev => ({
+      ...prev,
+      contractorReceipts: [...prev.contractorReceipts, receipt],
+      contractorPayments: prev.contractorPayments.map(p => updatedById.get(p.id) || p),
+    }));
+    return receipt;
   }, []);
 
   // ---------------- Housing (السكن) ----------------

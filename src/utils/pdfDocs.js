@@ -43,6 +43,7 @@ export function buildContractorArchiveHtml({ contractor, payments }) {
       <td>${esc(typeLabel(p.paymentType))}</td>
       <td>${p.paidBy ? esc(p.paidBy) : '<span class="muted">—</span>'}</td>
       <td>${p.paidAt ? dateAr(p.paidAt) : '<span class="muted">—</span>'}</td>
+      <td>${p.receiptNumber ? `#${nAr(p.receiptNumber)}` : '<span class="muted">بدون إيصال</span>'}</td>
     </tr>`).join('');
 
   return `
@@ -56,11 +57,11 @@ export function buildContractorArchiveHtml({ contractor, payments }) {
     </div>
     <table class="t">
       <thead>
-        <tr><th>م</th><th>تاريخ الدفعة</th><th>المبلغ</th><th>نوع الصرف</th><th>صُرفت بواسطة</th><th>تاريخ الصرف</th></tr>
+        <tr><th>م</th><th>تاريخ الدفعة</th><th>المبلغ</th><th>نوع الصرف</th><th>صُرفت بواسطة</th><th>تاريخ الصرف</th><th>رقم الإيصال</th></tr>
       </thead>
       <tbody>${bodyRows}</tbody>
       <tfoot>
-        <tr><td colspan="2" class="r">الإجمالي</td><td class="num">${moneyAr(total)}</td><td colspan="3" class="r" style="font-size:11px">${esc(amountInArabicWords(total))}</td></tr>
+        <tr><td colspan="2" class="r">الإجمالي</td><td class="num">${moneyAr(total)}</td><td colspan="4" class="r" style="font-size:11px">${esc(amountInArabicWords(total))}</td></tr>
       </tfoot>
     </table>
     ${footHtml()}`;
@@ -85,6 +86,8 @@ const RECEIPT_CSS = `
   .rc-title { background: ${NAVY}; color: #fff; text-align: center; border-radius: 10px; padding: 6px 34px; font-size: 20px; font-weight: 800; }
   .ack { margin-top: 12px; border: 1.5px solid #b9c7dc; background: #f6f9fd; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; line-height: 1.9; }
   .ack b { color: ${NAVY}; }
+  .hist-note { margin-top: 7px; font-size: 10.5px; color: #64748b; text-align: center; }
+  .hist-note b { color: #475569; }
   table.sigs { width: 100%; border-collapse: collapse; margin-top: 16px; page-break-inside: avoid; }
   table.sigs td { vertical-align: middle; padding: 0 7px; }
   .sig-box { position: relative; height: 44mm; border: 1.5px solid ${NAVY}; border-radius: 10px; overflow: hidden; }
@@ -97,10 +100,13 @@ const RECEIPT_CSS = `
   .stamp img { width: 38mm; height: 38mm; transform: rotate(-6deg); }
 `;
 
-export function buildContractorReceiptHtml({ contractor, payments, printedOn, receiptNumber }) {
+export function buildContractorReceiptHtml({ contractor, payments, printedOn, receiptNumber, historicalTotal }) {
   const rows = archiveRows(payments);
   const total = rows.reduce((s, p) => s + (p.amount || 0), 0);
   const words = amountInArabicWords(total);
+  // إجمالي المستلم من المقاول لحد النهارده (شامل الإيصال ده) — للعلم بس، مش جزء من
+  // إقرار الاستلام اللي بيوقّع عليه المقاول (اللي بيوقّع عليه هو مبلغ الإيصال ده بس).
+  const showHistorical = historicalTotal != null && historicalTotal > total;
 
   const bodyRows = rows.map((p, i) => `
     <tr>
@@ -138,6 +144,10 @@ export function buildContractorReceiptHtml({ contractor, payments, printedOn, re
         أقر أنا المقاول / <b>${esc(contractor.name)}</b> بأنني استلمت من ${COMPANY_NAME}
         المبالغ الموضحة بالجدول أعلاه، وإجماليها <b>${moneyAr(total)}</b> (${esc(words)}).
       </div>
+      ${showHistorical ? `
+      <div class="hist-note">
+        للعلم — إجمالي ما تم صرفه للمقاول <b>${esc(contractor.name)}</b> حتى تاريخه (شامل هذا الإيصال): <b>${moneyAr(historicalTotal)}</b>
+      </div>` : ''}
       <table class="sigs"><tr>
         <td style="width:36%">
           <div class="sig-box">
@@ -157,10 +167,10 @@ export function buildContractorReceiptHtml({ contractor, payments, printedOn, re
     </div>`;
 }
 
-export function printContractorReceipt({ contractor, payments, receiptNumber }) {
+export function printContractorReceipt({ contractor, payments, receiptNumber, historicalTotal }) {
   return openPrintWindow({
     title: `إيصال-المقاول-${contractor.name}`,
-    body: buildContractorReceiptHtml({ contractor, payments, receiptNumber }),
+    body: buildContractorReceiptHtml({ contractor, payments, receiptNumber, historicalTotal }),
     css: RECEIPT_CSS,
   });
 }

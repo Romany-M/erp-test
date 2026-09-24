@@ -284,11 +284,17 @@ create table if not exists public.contractor_receipts (
   receipt_number bigint not null default nextval('public.contractor_receipt_number_seq') unique,
   contractor_id  uuid references public.contractors(id) on delete set null,
   contractor_name text not null,
-  total_amount   numeric(12,2) not null default 0,
+  total_amount   numeric(12,2) not null default 0,  -- مبلغ الإيصال ده بس (الدفعات الجديدة)، مش إجمالي تاريخي
   payments_count integer not null default 0,
   created_at     timestamptz not null default now()
 );
 create index if not exists contractor_receipts_contractor_idx on public.contractor_receipts(contractor_id);
+
+-- ربط كل دفعة بالإيصال اللي اتوثّقت فيه، عشان كل دفعة تدخل في إيصال واحد بس ومايتكررش
+-- توثيقها في إيصال تاني. الدفعة اللي receipt_id بتاعها فاضي = لسه ما اتطبعلهاش إيصال.
+alter table public.contractor_payments
+  add column if not exists receipt_id uuid references public.contractor_receipts(id) on delete set null;
+create index if not exists contractor_payments_receipt_idx on public.contractor_payments(receipt_id);
 
 
 -- ==========================================================================
