@@ -78,26 +78,26 @@ export function printContractorArchive({ contractor, payments }) {
 // 2) إيصال المقاول (بنفس شكل التمبلت: عربي بس) — يطبع كل الأرشيف + توقيعين + الختم
 // ============================================================================
 const RECEIPT_CSS = `
-  .rc { border: 2px solid ${NAVY}; border-radius: 14px; padding: 12px 14px 14px; }
-  .rc table.lh { margin-bottom: 6px; border-bottom: 1px solid #cfdcee; }
-  .rc-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin: 8px 0 10px; }
+  .rc { border: 2px solid ${NAVY}; border-radius: 12px; padding: 8px 12px 9px; }
+  .rc table.lh { margin-bottom: 4px; border-bottom: 1px solid #cfdcee; }
+  .rc-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin: 5px 0 6px; }
   .rc-field { font-size: 12.5px; font-weight: 700; color: ${NAVY}; white-space: nowrap; }
   .rc-field .line { display: inline-block; min-width: 42mm; border-bottom: 1.5px solid #64748b; height: 15px; vertical-align: bottom; }
-  .rc-title { background: ${NAVY}; color: #fff; text-align: center; border-radius: 10px; padding: 6px 34px; font-size: 20px; font-weight: 800; }
-  .ack { margin-top: 12px; border: 1.5px solid #b9c7dc; background: #f6f9fd; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; line-height: 1.9; }
+  .rc-title { background: ${NAVY}; color: #fff; text-align: center; border-radius: 10px; padding: 5px 34px; font-size: 19px; font-weight: 800; }
+  .ack { margin-top: 8px; border: 1.5px solid #b9c7dc; background: #f6f9fd; border-radius: 9px; padding: 6px 10px; font-size: 12.5px; line-height: 1.75; }
   .ack b { color: ${NAVY}; }
-  .hist-note { margin-top: 7px; font-size: 10.5px; color: #64748b; text-align: center; }
+  .hist-note { margin-top: 5px; font-size: 10.5px; color: #64748b; text-align: center; }
   .hist-note b { color: #475569; }
-  table.sigs { width: 100%; border-collapse: collapse; margin-top: 16px; page-break-inside: avoid; }
+  table.sigs { width: 100%; border-collapse: collapse; margin-top: 9px; page-break-inside: avoid; }
   table.sigs td { vertical-align: middle; padding: 0 7px; }
-  .sig-box { position: relative; height: 44mm; border: 1.5px solid ${NAVY}; border-radius: 10px; overflow: hidden; }
-  .sig-h { background: ${NAVY}; color: #fff; text-align: center; font-weight: 800; font-size: 13px; padding: 5px; }
-  .sig-img { display: block; margin: 5mm auto 0; height: 15mm; width: auto; }
-  .sig-name { position: absolute; left: 8px; right: 8px; bottom: 6px; font-size: 11.5px; font-weight: 700; color: #0f172a;
-              text-align: center; border-top: 1px dashed #94a3b8; padding-top: 4px; line-height: 1.5; }
-  .sig-role { font-size: 10px; color: #64748b; font-weight: 500; }
+  .sig-box { position: relative; height: 28mm; border: 1.5px solid ${NAVY}; border-radius: 9px; overflow: hidden; }
+  .sig-h { background: ${NAVY}; color: #fff; text-align: center; font-weight: 800; font-size: 12.5px; padding: 4px; }
+  .sig-img { display: block; margin: 2mm auto 0; height: 12mm; width: auto; }
+  .sig-name { position: absolute; left: 8px; right: 8px; bottom: 4px; font-size: 11px; font-weight: 700; color: #0f172a;
+              text-align: center; border-top: 1px dashed #94a3b8; padding-top: 3px; line-height: 1.4; }
+  .sig-role { font-size: 9.5px; color: #64748b; font-weight: 500; }
   .stamp { text-align: center; }
-  .stamp img { width: 38mm; height: 38mm; transform: rotate(-6deg); }
+  .stamp img { width: 28mm; height: 28mm; transform: rotate(-6deg); }
 `;
 
 export function buildContractorReceiptHtml({ contractor, payments, printedOn, receiptNumber, historicalTotal }) {
