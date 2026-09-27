@@ -33,6 +33,15 @@ export function dateAr(value) {
   return `${f(d)} / ${f(m)} / ${f(y)}`;
 }
 
+// 2026-09-21 -> "٢١/٩" (من غير سنة، لعناوين الأعمدة الضيقة)
+export function dateArShort(value) {
+  const iso = toISODate(value);
+  if (!iso) return '—';
+  const [, m, d] = iso.split('-').map(Number);
+  const f = (x) => x.toLocaleString('ar-EG', { useGrouping: false });
+  return `${f(d)}/${f(m)}`;
+}
+
 export function letterheadHtml(title, sideHtml = '') {
   // جدول (مش grid/flex) عشان يطلع بنفس الشكل في كل المتصفحات ومحركات الطباعة
   return `

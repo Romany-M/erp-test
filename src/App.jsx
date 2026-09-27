@@ -22,6 +22,7 @@ import ContractorsPage from './pages/ContractorsPage';
 import ContractorDetailPage from './pages/ContractorDetailPage';
 import HousingPage from './pages/HousingPage';
 import PhoneDirectoryPage from './pages/PhoneDirectoryPage';
+import AttendanceRollPage from './pages/AttendanceRollPage';
 import QRAttendanceScanner from './pages/QRAttendanceScanner';
 import QRAttendanceReportsPage from './pages/QRAttendanceReportsPage';
 
@@ -92,6 +93,7 @@ function AppRoutes() {
         <Route path="contractors/:id" element={<ContractorDetailPage />} />
         <Route path="housing" element={<HousingPage />} />
         <Route path="phone-directory" element={<PhoneDirectoryPage />} />
+        <Route path="attendance-roll" element={<AttendanceRollPage />} />
         <Route path="expenses-report" element={<ExpensesReportPage />} />
         <Route path="qr-attendance" element={<QRAttendanceScanner />} />
         <Route path="qr-attendance-reports" element={<QRAttendanceReportsPage />} />

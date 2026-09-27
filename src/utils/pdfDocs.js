@@ -5,7 +5,7 @@ import { PDF_STAMP_DATA_URI } from '../assets/pdfStamp';
 import { MANAGER_SIGNATURE_DATA_URI } from '../assets/managerSignature';
 import { amountInArabicWords } from './arabicWords';
 import {
-  COMPANY_NAME, NAVY, esc, nAr, moneyAr, dateAr, letterheadHtml, openPrintWindow,
+  COMPANY_NAME, NAVY, esc, nAr, moneyAr, dateAr, dateArShort, letterheadHtml, openPrintWindow,
 } from './printDoc';
 
 export const ACCOUNTANT_NAME = 'روماني مكرم';
@@ -270,3 +270,57 @@ export function printPhoneDirectory({ workers, filtersText }) {
     body: buildPhoneDirectoryHtml({ workers, filtersText }),
   });
 }
+
+// ============================================================================
+// 5) كشف تمام (طباعة ورقية فاضية يمسكها التايم كيبر ويعلّم عليها يوميًا بالقلم)
+// workers: قايمة العمال اللي المستخدم اختارهم بالبحث (بالترتيب اللي اتضافوا بيه)
+// days: [{ date: 'YYYY-MM-DD', label: 'السبت' }, ...] أيام الأسبوع المختار
+// ============================================================================
+const ROLL_CSS = `
+  @page { size: A4 landscape; margin: 9mm; }
+  table.roll th { font-size: 10.5px; padding: 5px 3px; }
+  table.roll td { font-size: 11px; padding: 4px 3px; }
+  table.roll .daynum { display: block; font-weight: 400; font-size: 9.5px; color: #cdd9ec; }
+  table.roll td.day-cell { height: 11mm; }
+`;
+
+export function buildAttendanceRollSheetHtml({ workers, days, weekLabel }) {
+  const dayHeaders = days.map(d => `<th style="width:6.2%">${esc(d.label)}<span class="daynum">${dateArShort(d.date)}</span></th>`).join('');
+  const rows = workers.map((w, i) => `
+    <tr>
+      <td>${nAr(i + 1)}</td>
+      <td>${esc(w.code)}</td>
+      <td class="r"><b>${esc(w.name)}</b></td>
+      <td>${esc(w.role)}</td>
+      ${days.map(() => '<td class="day-cell"></td>').join('')}
+    </tr>`).join('');
+
+  return `
+    ${letterheadHtml('كشف تمام الحضور والغياب', `الأسبوع:<br><b>${esc(weekLabel)}</b>`)}
+    <div class="chips">
+      <div class="chip">عدد العمال <b>${nAr(workers.length)}</b></div>
+    </div>
+    <table class="t roll">
+      <thead>
+        <tr>
+          <th style="width:3.5%">م</th>
+          <th style="width:7%">الكود</th>
+          <th class="r">الاسم</th>
+          <th style="width:10%">الفئة</th>
+          ${dayHeaders}
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="11" class="muted">لا يوجد عمال مختارين</td></tr>'}</tbody>
+    </table>
+    <p class="foot-note">* توضع علامة (✓) أمام أيام الحضور، وعلامة (✗) أمام أيام الغياب، أمام كل عامل في خانة اليوم المناسبة.</p>
+    ${footHtml()}`;
+}
+
+export function printAttendanceRollSheet({ workers, days, weekLabel }) {
+  return openPrintWindow({
+    title: 'كشف-تمام-الحضور',
+    body: buildAttendanceRollSheetHtml({ workers, days, weekLabel }),
+    css: ROLL_CSS,
+  });
+}
+
