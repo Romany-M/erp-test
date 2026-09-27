@@ -116,6 +116,28 @@ export default function ContractorDetailPage() {
 
   const paymentLabel = (type) => (PAYMENT_TYPES.find(x => x.value === type) || PAYMENT_TYPES[0]).label;
 
+  // كل الإيصالات اللي اتطبعت للمقاول ده، الأحدث الأول — عشان لو حد نسي يحفظ
+  // الإيصال وقت الطباعة، يقدر يرجع هنا يطبعه تاني في أي وقت من غير ما يتغيّر رقمه
+  // ولا محتواه (بيرجع بنفس الدفعات وبنفس الإجمالي التاريخي اللي كانوا وقتها).
+  const myReceipts = useMemo(
+    () => contractorReceipts
+      .filter(r => r.contractorId === id)
+      .sort((a, b) => (b.receiptNumber || 0) - (a.receiptNumber || 0)),
+    [contractorReceipts, id]
+  );
+
+  const handleReprint = (receipt) => {
+    const linkedPayments = contractorPayments.filter(p => p.receiptId === receipt.id);
+    if (linkedPayments.length === 0) {
+      alert('تعذر العثور على دفعات هذا الإيصال (يمكن تم حذفها).');
+      return;
+    }
+    printContractorReceipt({
+      contractor, payments: linkedPayments,
+      receiptNumber: receipt.receiptNumber, historicalTotal: receipt.historicalTotal,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -217,6 +239,49 @@ export default function ContractorDetailPage() {
                       <button onClick={() => { if (window.confirm('هل تريد حذف هذا المبلغ؟')) deleteContractorPayment(p.id); }}
                         className="text-red-400 hover:bg-red-50 p-1.5 rounded transition">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-800 text-lg">الإيصالات الصادرة</h3>
+          <p className="text-xs text-gray-400 mt-1">
+            نسيت تحفظ إيصال وقت الطباعة؟ اطبعه تاني من هنا في أي وقت — هيرجع بنفس رقمه وبياناته
+          </p>
+        </div>
+        {myReceipts.length === 0 ? (
+          <p className="text-center text-gray-400 text-sm py-8">لا توجد إيصالات مطبوعة بعد</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-2 text-right font-semibold text-gray-600">رقم الإيصال</th>
+                  <th className="px-4 py-2 text-right font-semibold text-gray-600">تاريخ الإصدار</th>
+                  <th className="px-4 py-2 text-right font-semibold text-gray-600">عدد الدفعات</th>
+                  <th className="px-4 py-2 text-right font-semibold text-gray-600">إجمالي الإيصال</th>
+                  <th className="px-4 py-2 text-center font-semibold text-gray-600">إعادة الطباعة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {myReceipts.map(r => (
+                  <tr key={r.id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-2 font-bold text-primary-700 ltr" dir="ltr">#{r.receiptNumber}</td>
+                    <td className="px-4 py-2">{r.createdAt ? new Date(r.createdAt).toLocaleDateString('ar-EG') : '—'}</td>
+                    <td className="px-4 py-2">{(r.paymentsCount || 0).toLocaleString('ar-EG')}</td>
+                    <td className="px-4 py-2 font-bold text-gray-800">{(r.totalAmount || 0).toLocaleString('ar-EG')} ج.م</td>
+                    <td className="px-4 py-2 text-center">
+                      <button onClick={() => handleReprint(r)}
+                        className="px-3 py-1.5 bg-white hover:bg-gray-50 text-primary-700 border border-primary-300 rounded-lg text-xs font-medium transition inline-flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                        طباعة تاني
                       </button>
                     </td>
                   </tr>

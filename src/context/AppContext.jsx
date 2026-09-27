@@ -84,6 +84,7 @@ const MAPS = {
   contractor_receipts: [
     ['id', 'id'], ['receiptNumber', 'receipt_number'], ['contractorId', 'contractor_id'],
     ['contractorName', 'contractor_name'], ['totalAmount', 'total_amount'],
+    ['historicalTotal', 'historical_total'],
     ['paymentsCount', 'payments_count'], ['createdAt', 'created_at'],
   ],
   contractor_payments: [
@@ -848,6 +849,12 @@ export function AppProvider({ children }) {
   const issueContractorReceipt = useCallback(async (contractor, newPayments) => {
     if (!newPayments || newPayments.length === 0) throw new Error('لا يوجد دفعات جديدة لتوثيقها');
     const totalAmount = newPayments.reduce((s, p) => s + (p.amount || 0), 0);
+    // إجمالي كل ما تم صرفه للمقاول ده لحد اللحظة دي (شامل الإيصال الجديد ده) —
+    // بيتسجّل مع الإيصال نفسه عشان لو حد فتحه تاني بعدين (إعادة طباعة) يشوف
+    // نفس الرقم اللي كان ظاهر وقت إصداره، مش الإجمالي الحالي اللي ممكن يكون زاد.
+    const historicalTotal = state.contractorPayments
+      .filter(p => p.contractorId === contractor.id && p.paid)
+      .reduce((s, p) => s + (p.amount || 0), 0);
 
     const { data: receiptRow, error: receiptErr } = await supabase
       .from('contractor_receipts')
@@ -855,6 +862,7 @@ export function AppProvider({ children }) {
         contractor_id: contractor.id,
         contractor_name: contractor.name,
         total_amount: totalAmount,
+        historical_total: historicalTotal,
         payments_count: newPayments.length,
       })
       .select()
@@ -877,7 +885,7 @@ export function AppProvider({ children }) {
       contractorPayments: prev.contractorPayments.map(p => updatedById.get(p.id) || p),
     }));
     return receipt;
-  }, []);
+  }, [state.contractorPayments]);
 
   // ---------------- Housing (السكن) ----------------
   const addApartment = useCallback(

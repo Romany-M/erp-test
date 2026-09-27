@@ -286,6 +286,10 @@ create table if not exists public.contractor_receipts (
   contractor_name text not null,
   total_amount   numeric(12,2) not null default 0,  -- مبلغ الإيصال ده بس (الدفعات الجديدة)، مش إجمالي تاريخي
   payments_count integer not null default 0,
+  -- إجمالي ما تم صرفه للمقاول لحد لحظة إصدار الإيصال ده (شامله). بيتسجل وقت
+  -- الإصدار عشان لو الإيصال اتطبع تاني بعدين، السطر المعلوماتي "للعلم" يفضل
+  -- بنفس الرقم التاريخي اللي المقاول شافه واتفق عليه وقتها، مش رقم النهارده.
+  historical_total numeric(12,2) not null default 0,
   created_at     timestamptz not null default now()
 );
 create index if not exists contractor_receipts_contractor_idx on public.contractor_receipts(contractor_id);
