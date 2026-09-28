@@ -278,22 +278,66 @@ export function printPhoneDirectory({ workers, filtersText }) {
 // ============================================================================
 const ROLL_CSS = `
   @page { size: A4 landscape; margin: 9mm; }
+  table.roll { table-layout: fixed; }
   table.roll th { font-size: 10.5px; padding: 5px 3px; }
   table.roll td { font-size: 11px; padding: 4px 3px; }
   table.roll .daynum { display: block; font-weight: 400; font-size: 9.5px; color: #cdd9ec; }
-  table.roll td.day-cell { height: 11mm; }
+  table.roll td.day-cell, table.roll td.total-cell { height: 11mm; }
+  table.roll td.name-cell { font-weight: 700; word-break: break-word; }
+  table.roll tbody tr.group-row td { background: #dbe6f5; color: ${NAVY}; font-weight: 800; font-size: 12px;
+                                    text-align: right; padding: 5px 10px; border-color: #b9c7dc; }
+  table.roll tbody tr.group-row { page-break-after: avoid; }
 `;
 
+// ترتيب كشف التمام: كل مهنة في مجموعة لوحدها، وفرامن المهنة فوق عمالها مباشرة
+// (فورمان الحدادين فوق الحدادين، فورمان النجارين فوق النجارين، وهكذا)،
+// وجوه كل شريحة الترتيب هجائي. اللي مالوش مهنة معروفة بيتحط في آخر الكشف.
+const ROLL_GROUPS = [
+  { label: 'المهندسين', roles: ['مهندس'] },
+  { label: 'المحاسبين', roles: ['محاسب'] },
+  { label: 'الشدة', roles: ['فورمان شده', 'شده'] },
+  { label: 'النجارة', roles: ['فورمان نجارين', 'نجار'] },
+  { label: 'الحدادة', roles: ['فورمان حدادين', 'حداد'] },
+];
+const ROLL_OTHER_LABEL = 'بدون فئة';
+
+export function groupRollWorkers(workers) {
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'ar');
+  const groups = ROLL_GROUPS.map(g => ({ label: g.label, roles: g.roles, workers: [] }));
+  const others = [];
+  workers.forEach(w => {
+    const g = groups.find(x => x.roles.includes(w.role));
+    (g ? g.workers : others).push(w);
+  });
+  groups.forEach(g => {
+    g.workers.sort((a, b) => {
+      const ra = g.roles.indexOf(a.role);
+      const rb = g.roles.indexOf(b.role);
+      return ra !== rb ? ra - rb : byName(a, b); // الفورمان (أول دور في القايمة) الأول
+    });
+  });
+  others.sort(byName);
+  const result = groups.filter(g => g.workers.length);
+  if (others.length) result.push({ label: ROLL_OTHER_LABEL, roles: [], workers: others });
+  return result.map(({ label, workers: ws }) => ({ label, workers: ws }));
+}
+
 export function buildAttendanceRollSheetHtml({ workers, days, weekLabel }) {
-  const dayHeaders = days.map(d => `<th style="width:6.2%">${esc(d.label)}<span class="daynum">${dateArShort(d.date)}</span></th>`).join('');
-  const rows = workers.map((w, i) => `
+  const colCount = 5 + days.length + 1; // م + الكود + الاسم + المهنة + الفئة + الأيام + الإجمالي
+  const dayHeaders = days.map(d => `<th style="width:7.4%">${esc(d.label)}<span class="daynum">${dateArShort(d.date)}</span></th>`).join('');
+  const groups = groupRollWorkers(workers);
+  const rows = groups.map(g => `
+    <tr class="group-row"><td colspan="${colCount}">${esc(g.label)} — ${nAr(g.workers.length)}</td></tr>
+    ${g.workers.map((w, i) => `
     <tr>
       <td>${nAr(i + 1)}</td>
       <td>${esc(w.code)}</td>
-      <td class="r"><b>${esc(w.name)}</b></td>
+      <td class="name-cell">${esc(w.name)}</td>
       <td>${esc(w.role)}</td>
+      <td class="num">${Number(w.dailyWage) > 0 ? nAr(w.dailyWage) : '<span class="muted">—</span>'}</td>
       ${days.map(() => '<td class="day-cell"></td>').join('')}
-    </tr>`).join('');
+      <td class="total-cell"></td>
+    </tr>`).join('')}`).join('');
 
   return `
     ${letterheadHtml('كشف تمام الحضور والغياب', `الأسبوع:<br><b>${esc(weekLabel)}</b>`)}
@@ -304,13 +348,15 @@ export function buildAttendanceRollSheetHtml({ workers, days, weekLabel }) {
       <thead>
         <tr>
           <th style="width:3.5%">م</th>
-          <th style="width:7%">الكود</th>
-          <th class="r">الاسم</th>
-          <th style="width:10%">الفئة</th>
+          <th style="width:6.5%">الكود</th>
+          <th style="width:15.5%">الاسم</th>
+          <th style="width:9%">المهنة</th>
+          <th style="width:7%">الفئة</th>
           ${dayHeaders}
+          <th style="width:7%">الإجمالي</th>
         </tr>
       </thead>
-      <tbody>${rows || '<tr><td colspan="11" class="muted">لا يوجد عمال مختارين</td></tr>'}</tbody>
+      <tbody>${rows || `<tr><td colspan="${colCount}" class="muted">لا يوجد عمال مختارين</td></tr>`}</tbody>
     </table>
     <p class="foot-note">* توضع علامة (✓) أمام أيام الحضور، وعلامة (✗) أمام أيام الغياب، أمام كل عامل في خانة اليوم المناسبة.</p>
     ${footHtml()}`;

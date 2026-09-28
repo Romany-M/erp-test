@@ -1,12 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { todayISO } from '../utils/constants';
 import { addDaysISO, payWeekOf } from '../utils/weeks';
-import { printAttendanceRollSheet } from '../utils/pdfDocs';
+import { printAttendanceRollSheet, groupRollWorkers } from '../utils/pdfDocs';
 
 const DAY_LABELS = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
 const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' });
 const norm = (v) => String(v || '').trim().toLowerCase();
+
+// العمال المختارين بيتحفظوا على الجهاز (أكواد بس)، عشان لو المستخدم راح لأي
+// قسم تاني ورجع — أو عمل ريفريش — الكشف يفضل زي ما هو لحد ما يفرّغه بنفسه.
+const STORAGE_KEY = 'attendance-roll:selected-ids';
+const loadSavedIds = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+};
 
 // طباعة التمام: كشف ورقي فاضي يمسكه التايم كيبر ويعلّم عليه يوميًا بالقلم.
 // خانة الأسماء مش بتتملى تلقائي من كل العمال — المستخدم هو اللي بيدوّر بالاسم
@@ -20,9 +30,20 @@ export default function AttendanceRollPage() {
   const isCurrentWeek = weekStart === currentWeekStart;
 
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState([]); // ترتيب الإضافة، والطباعة بترتّبهم هجائيًا
+  const [selectedIdList, setSelectedIdList] = useState(loadSavedIds);
 
-  const selectedIds = useMemo(() => new Set(selected.map(w => w.id)), [selected]);
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedIdList)); } catch { /* التخزين مش متاح */ }
+  }, [selectedIdList]);
+
+  // بنحوّل الأكواد لعمال فعليين من البيانات الحالية (لو عامل اتحذف أو بقى غير نشط مش هيظهر،
+  // ومش بنمسح كوده من التخزين عشان لو البيانات لسه بتتحمّل ما نخسرش الاختيار).
+  const selected = useMemo(() => {
+    const byId = new Map(workers.map(w => [w.id, w]));
+    return selectedIdList.map(id => byId.get(id)).filter(w => w && w.status === 'active');
+  }, [workers, selectedIdList]);
+
+  const selectedIds = useMemo(() => new Set(selectedIdList), [selectedIdList]);
 
   const matches = useMemo(() => {
     const q = norm(search);
@@ -34,16 +55,15 @@ export default function AttendanceRollPage() {
   }, [workers, search, selectedIds]);
 
   const addWorker = (w) => {
-    setSelected(prev => [...prev, w]);
+    setSelectedIdList(prev => [...prev, w.id]);
     setSearch('');
   };
-  const removeWorker = (id) => setSelected(prev => prev.filter(w => w.id !== id));
-  const clearAll = () => { if (window.confirm('هل تريد إفراغ الكشف من كل العمال؟')) setSelected([]); };
+  const removeWorker = (id) => setSelectedIdList(prev => prev.filter(x => x !== id));
+  const clearAll = () => { if (window.confirm('هل تريد إفراغ الكشف من كل العمال؟')) setSelectedIdList([]); };
 
-  const sortedSelected = useMemo(
-    () => [...selected].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar')),
-    [selected]
-  );
+  // نفس ترتيب الطباعة: مجموعة لكل مهنة، والفورمان فوق عماله
+  const groups = useMemo(() => groupRollWorkers(selected), [selected]);
+  const sortedSelected = useMemo(() => groups.flatMap(g => g.workers), [groups]);
 
   const days = useMemo(
     () => DAY_LABELS.map((label, i) => ({ label, date: addDaysISO(week.start, i) })),
@@ -123,7 +143,7 @@ export default function AttendanceRollPage() {
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h3 className="font-bold text-gray-800 text-lg">عمال الكشف</h3>
-            <p className="text-xs text-gray-400 mt-1">هيتطبعوا بالترتيب الهجائي</p>
+            <p className="text-xs text-gray-400 mt-1">هيتطبعوا مقسّمين حسب المهنة، والفورمان فوق عماله</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm font-bold text-primary-700">{sortedSelected.length.toLocaleString('ar-EG')} عامل</span>
@@ -135,17 +155,27 @@ export default function AttendanceRollPage() {
         {sortedSelected.length === 0 ? (
           <p className="text-center text-gray-400 text-sm py-8">مفيش عمال مختارين — ابحث بالاسم فوق وضيفهم</p>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {sortedSelected.map(w => (
-              <div key={w.id} className="px-5 py-2.5 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-800 text-sm truncate">{w.name} <span className="text-xs text-gray-400">{w.code}</span></p>
-                  <p className="text-xs text-gray-400">{w.role}</p>
+          <div>
+            {groups.map(g => (
+              <div key={g.label}>
+                <div className="px-5 py-1.5 bg-primary-50 text-primary-700 text-xs font-bold flex items-center justify-between">
+                  <span>{g.label}</span>
+                  <span>{g.workers.length.toLocaleString('ar-EG')}</span>
                 </div>
-                <button onClick={() => removeWorker(w.id)} title="إزالة من الكشف"
-                  className="text-red-400 hover:bg-red-50 p-1.5 rounded transition flex-shrink-0">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <div className="divide-y divide-gray-100">
+                  {g.workers.map(w => (
+                    <div key={w.id} className="px-5 py-2.5 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 text-sm truncate">{w.name} <span className="text-xs text-gray-400">{w.code}</span></p>
+                        <p className="text-xs text-gray-400">{w.role}</p>
+                      </div>
+                      <button onClick={() => removeWorker(w.id)} title="إزالة من الكشف"
+                        className="text-red-400 hover:bg-red-50 p-1.5 rounded transition flex-shrink-0">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
