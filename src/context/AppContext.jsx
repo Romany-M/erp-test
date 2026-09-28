@@ -18,14 +18,16 @@ const MAPS = {
     ['id', 'id'], ['code', 'code'], ['name', 'name'], ['role', 'role'],
     ['dailyWage', 'daily_wage'], ['status', 'status'], ['phone', 'phone'],
     ['notes', 'notes'], ['walletNumber', 'wallet_number'], ['walletName', 'wallet_name'],
-    ['apartmentId', 'apartment_id'], ['createdAt', 'created_at'],
+    ['apartmentId', 'apartment_id'], ['plotId', 'plot_id'], ['buildingId', 'building_id'],
+    ['createdAt', 'created_at'],
   ],
   attendance: [
     ['id', 'id'], ['workerId', 'worker_id'], ['workerName', 'worker_name'],
     ['workerCode', 'worker_code'], ['role', 'role'], ['date', 'date'],
     ['status', 'status'], ['overtimeFraction', 'overtime_fraction'],
     ['overtimeValue', 'overtime_value'], ['pillarCost', 'pillar_cost'],
-    ['deduction', 'deduction'], ['createdAt', 'created_at'],
+    ['deduction', 'deduction'], ['plotId', 'plot_id'], ['buildingId', 'building_id'],
+    ['createdAt', 'created_at'],
   ],
   advances: [
     ['id', 'id'], ['workerId', 'worker_id'], ['date', 'date'], ['amount', 'amount'],
@@ -109,8 +111,8 @@ const MAPS = {
 // UUID foreign-key columns per table: empty strings must become NULL
 // before being sent to Postgres, or the insert/update fails outright.
 const UUID_FIELDS = {
-  workers: ['apartmentId'],
-  attendance: ['workerId'],
+  workers: ['apartmentId', 'plotId', 'buildingId'],
+  attendance: ['workerId', 'plotId', 'buildingId'],
   advances: ['workerId'],
   custody: ['workerId'],
   food_expenses: [],
@@ -436,14 +438,26 @@ export function AppProvider({ children }) {
   const deleteWorker = useCallback((id) => deleteRow('workers', 'workers', id), [deleteRow]);
 
   // ---------------- Attendance ----------------
-  const addAttendance = useCallback(async (record) => {
-    const existing = state.attendance.find(a => a.workerId === record.workerId && a.date === record.date);
+  // بيختم سجل الحضور بمكان العامل الحالي (لو له مكان) وقت إنشاء السجل بس.
+  // السجل الموجود قبل كده بيحتفظ بمكانه القديم حتى لو اتعدّل (أوفر تايم، خصم، ...)،
+  // وإلا نقل العامل لمكان تاني هيحرّك تكلفة أيامه القديمة معاه.
+  const withLocation = useCallback((record, existing) => {
+    if (existing) return record;
+    if ('plotId' in record || 'buildingId' in record) return record;
+    const w = state.workers.find(x => x.id === record.workerId);
+    if (!w || (!w.plotId && !w.buildingId)) return record;
+    return { ...record, plotId: w.plotId || null, buildingId: w.buildingId || null };
+  }, [state.workers]);
+
+  const addAttendance = useCallback(async (rec) => {
+    const existing = state.attendance.find(a => a.workerId === rec.workerId && a.date === rec.date);
+    const record = withLocation(rec, existing);
     if (existing) {
       await updateRow('attendance', 'attendance', existing.id, record);
     } else {
       await insertRow('attendance', 'attendance', record);
     }
-  }, [state.attendance, insertRow, updateRow]);
+  }, [state.attendance, insertRow, updateRow, withLocation]);
 
   const addAttendanceBulk = useCallback(async (records) => {
     // Rows for workers who already have an attendance record for this date
@@ -455,8 +469,9 @@ export function AppProvider({ children }) {
     // the NOT NULL constraint instead of letting the DB generate a new id.
     const updateRows = [];
     const insertRows = [];
-    records.forEach(r => {
-      const existing = state.attendance.find(a => a.workerId === r.workerId && a.date === r.date);
+    records.forEach(rec => {
+      const existing = state.attendance.find(a => a.workerId === rec.workerId && a.date === rec.date);
+      const r = withLocation(rec, existing);
       const dbRow = toDb('attendance', r);
       if (existing) {
         updateRows.push({ ...dbRow, id: existing.id });
@@ -495,7 +510,7 @@ export function AppProvider({ children }) {
       });
       return { ...prev, attendance: next };
     });
-  }, [state.attendance]);
+  }, [state.attendance, withLocation]);
 
   const deleteAttendanceForDate = useCallback(async (date) => {
     const { error } = await supabase.from('attendance').delete().eq('date', date);
@@ -919,6 +934,30 @@ export function AppProvider({ children }) {
     }));
   }, []);
 
+  // تعيين مجموعة عمال في مكان عمل بطلب واحد. buildingId يحدد المنطقة تلقائي،
+  // ولو اتبعت plotId بس العامل بيتعيّن على المنطقة من غير مبنى. الاتنين null = بدون تحديد.
+  // بيأثر على الأيام الجاية بس: سجلات الحضور القديمة بتفضل على مكانها وقت التسجيل.
+  const assignWorkersToLocation = useCallback(async ({ plotId = null, buildingId = null }, workerIds) => {
+    if (!workerIds || workerIds.length === 0) return;
+    let plot = plotId || null;
+    if (buildingId) {
+      const b = state.pillarBuildings.find(x => x.id === buildingId);
+      plot = b?.plotId || plot;
+    }
+    const { data, error } = await supabase
+      .from('workers')
+      .update({ plot_id: plot, building_id: buildingId || null })
+      .in('id', workerIds)
+      .select();
+    if (error) { console.error('assign workers to location failed:', error); throw error; }
+    const updated = fromDbList('workers', data);
+    setState(prev => ({
+      ...prev,
+      workers: prev.workers.map(w => updated.find(u => u.id === w.id) || w),
+    }));
+    return updated;
+  }, [state.pillarBuildings]);
+
   // ---------------- Derived totals (kept for API compatibility) ----------------
   const getTotalExpenses = useCallback((type = null) => {
     let total = 0;
@@ -980,6 +1019,7 @@ export function AppProvider({ children }) {
     addBuilding,
     updateBuilding,
     deleteBuilding,
+    assignWorkersToLocation,
     addPlot,
     updatePlot,
     deletePlot,
