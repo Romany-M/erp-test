@@ -3,14 +3,20 @@ import { useApp } from '../context/AppContext';
 import { ROLES, NO_ROLE, PAYMENT_TYPES } from '../utils/constants';
 import { COMPANY_LOGO_DATA_URI } from '../assets/companyLogo';
 import QRCode from 'qrcode';
+import { LOC_NONE, locationLabel, locationOptions, matchesLocation, parseLocation } from '../utils/locations';
 
 export default function WorkersPage() {
-  const { workers, addWorkersBulk, updateWorker, deleteWorker, qrCodes, generateQRCode, deleteQRCode } = useApp();
+  const { workers, addWorkersBulk, updateWorker, deleteWorker, qrCodes, generateQRCode, deleteQRCode, plots, pillarBuildings, assignWorkersToLocation } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [editId, setEditId] = useState(null);
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState('');
+  const [filterLoc, setFilterLoc] = useState('');
+  const [showAssign, setShowAssign] = useState(false);
+  const [assignTarget, setAssignTarget] = useState(LOC_NONE);
+  const [assigning, setAssigning] = useState(false);
+  const locOptions = locationOptions(plots, pillarBuildings);
   const [bulkText, setBulkText] = useState('');
   const [bulkError, setBulkError] = useState('');
   const [addedCount, setAddedCount] = useState(0);
@@ -20,6 +26,7 @@ export default function WorkersPage() {
   const [previewWorker, setPreviewWorker] = useState(null);
   const [qrImageUrl, setQrImageUrl] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [lastAssign, setLastAssign] = useState(null); // { count, label, prev: [{ids, plotId, buildingId}] } للتراجع
   const emptyWorker = { name: '', role: NO_ROLE, dailyWage: '', status: 'active', phone: '', notes: '', walletNumber: '', walletName: '' };
   const [forms, setForms] = useState([{ ...emptyWorker }]);
   const fileRef = useRef();
@@ -36,6 +43,7 @@ export default function WorkersPage() {
 
   const filtered = workers.filter(w => {
     if (filterRole && w.role !== filterRole) return false;
+    if (!matchesLocation(w, filterLoc)) return false;
     if (search && !w.name.includes(search) && !w.code.includes(search)) return false;
     return true;
   });
@@ -306,8 +314,68 @@ export default function WorkersPage() {
     });
   };
 
+  const assignTargetLabel = assignTarget === LOC_NONE
+    ? 'بدون تحديد'
+    : (locOptions.find(o => o.value === assignTarget)?.label || '');
+
+  // المكان الحالي للعمال المختارين، مجمّع: [{ label, count }]
+  const currentLocationSummary = (() => {
+    const map = new Map();
+    workers.filter(w => selectedIds.has(w.id)).forEach(w => {
+      const label = locationLabel(w, plots, pillarBuildings) || 'بدون تحديد';
+      map.set(label, (map.get(label) || 0) + 1);
+    });
+    return [...map.entries()].map(([label, count]) => ({ label, count }));
+  })();
+
+  const handleAssign = async () => {
+    setAssigning(true);
+    try {
+      const ids = [...selectedIds];
+      // نحفظ المكان القديم لكل مجموعة عشان زر التراجع
+      const groups = new Map();
+      workers.filter(w => selectedIds.has(w.id)).forEach(w => {
+        const key = `${w.plotId || ''}|${w.buildingId || ''}`;
+        if (!groups.has(key)) groups.set(key, { ids: [], plotId: w.plotId || null, buildingId: w.buildingId || null });
+        groups.get(key).ids.push(w.id);
+      });
+      await assignWorkersToLocation(parseLocation(assignTarget), ids);
+      setLastAssign({ count: ids.length, label: assignTargetLabel, prev: [...groups.values()] });
+      setShowAssign(false);
+      setSelectedIds(new Set());
+    } catch (err) {
+      alert('فشل تعيين العمال: ' + (err.message || 'خطأ غير متوقع') + '\n\nتأكد إنك شغّلت سكريبت supabase-work-locations.sql.');
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const handleUndoAssign = async () => {
+    if (!lastAssign) return;
+    setAssigning(true);
+    try {
+      for (const g of lastAssign.prev) {
+        await assignWorkersToLocation({ plotId: g.plotId, buildingId: g.buildingId }, g.ids);
+      }
+      setLastAssign(null);
+    } catch (err) {
+      alert('فشل التراجع: ' + (err.message || 'خطأ غير متوقع'));
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {lastAssign && (
+        <div className="flex items-center justify-between gap-3 bg-green-50 border border-green-200 text-green-800 rounded-lg px-4 py-3 text-sm">
+          <span>تم نقل {lastAssign.count.toLocaleString('ar-EG')} عامل إلى «{lastAssign.label}»</span>
+          <span className="flex items-center gap-3">
+            <button disabled={assigning} onClick={handleUndoAssign} className="font-bold underline disabled:opacity-60">تراجع</button>
+            <button onClick={() => setLastAssign(null)} className="text-green-600 hover:text-green-800" title="إخفاء">✕</button>
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-gray-800">إدارة العمال</h2>
         <div className="flex gap-2">
@@ -325,6 +393,12 @@ export default function WorkersPage() {
             className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
             تصدير CSV
           </button>
+          {selectedIds.size > 0 && (
+            <button onClick={() => { setAssignTarget(LOC_NONE); setShowAssign(true); }}
+              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+              تعيين العمال ({selectedIds.size.toLocaleString('ar-EG')})
+            </button>
+          )}
           {selectedIds.size > 0 && (
             <button onClick={() => printCards(workers.filter(w => selectedIds.has(w.id)))}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
@@ -349,6 +423,12 @@ export default function WorkersPage() {
             <option value="">كل الوظائف</option>
             {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
+          <select value={filterLoc} onChange={e => setFilterLoc(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
+            <option value="">كل أماكن العمل</option>
+            {locOptions.map(o => <option key={o.value} value={o.value}>{o.isZone ? `${o.label} (كل المنطقة)` : o.label}</option>)}
+            <option value={LOC_NONE}>بدون تحديد</option>
+          </select>
         </div>
       </div>
 
@@ -366,6 +446,7 @@ export default function WorkersPage() {
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">الكود</th>
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">الاسم</th>
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">الوظيفة</th>
+                <th className="px-4 py-3 text-right font-semibold text-gray-600">مكان العمل</th>
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">الأجر اليومي</th>
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">الحالة</th>
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">الهاتف</th>
@@ -384,6 +465,9 @@ export default function WorkersPage() {
                   <td className="px-4 py-3 font-medium">{w.name}</td>
                   <td className="px-4 py-3">
                     <span className="bg-primary-50 text-primary-700 px-2 py-1 rounded text-xs">{w.role}</span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-600">
+                    {locationLabel(w, plots, pillarBuildings) || <span className="text-gray-300">بدون تحديد</span>}
                   </td>
                   <td className="px-4 py-3">
                     {Number(w.dailyWage) > 0 ? (
@@ -588,6 +672,45 @@ export default function WorkersPage() {
                 className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">إغلاق</button>
               <button onClick={() => { handlePrintCard(previewWorker); }}
                 className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition font-medium">طباعة الكارت</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAssign && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !assigning && setShowAssign(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-800">تعيين العمال في مكان عمل</h3>
+            <p className="text-sm text-gray-500">
+              التغيير بيسري على الأيام الجاية، وحضورهم القديم بيفضل على مكانه.
+            </p>
+            <div className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-2 leading-6 text-amber-900">
+              <span className="font-semibold">من: </span>
+              {currentLocationSummary.map(g => `${g.label} (${g.count.toLocaleString('ar-EG')})`).join(' • ')}
+            </div>
+            <div className="max-h-32 overflow-y-auto text-xs text-gray-600 bg-gray-50 rounded-lg p-2 space-y-0.5">
+              {workers.filter(w => selectedIds.has(w.id)).map(w => (
+                <div key={w.id} className="flex justify-between gap-2">
+                  <span>{w.name}</span>
+                  <span className="text-gray-400">{locationLabel(w, plots, pillarBuildings) || 'بدون تحديد'}</span>
+                </div>
+              ))}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">مكان العمل</label>
+              <select value={assignTarget} onChange={e => setAssignTarget(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
+                <option value={LOC_NONE}>بدون تحديد</option>
+                {locOptions.map(o => <option key={o.value} value={o.value}>{o.isZone ? `${o.label} (المنطقة كلها)` : o.label}</option>)}
+              </select>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button disabled={assigning} onClick={() => setShowAssign(false)}
+                className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100">إلغاء</button>
+              <button disabled={assigning} onClick={handleAssign}
+                className="px-5 py-2 rounded-lg text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-60">
+                {assigning ? 'جاري الحفظ...' : `نقل ${selectedIds.size.toLocaleString('ar-EG')} عامل إلى «${assignTargetLabel}»`}
+              </button>
             </div>
           </div>
         </div>

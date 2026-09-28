@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { todayISO } from '../utils/constants';
 import { addDaysISO, payWeekOf } from '../utils/weeks';
 import { printAttendanceRollSheet, groupRollWorkers } from '../utils/pdfDocs';
+import { locationOptions, matchesLocation } from '../utils/locations';
 
 const DAY_LABELS = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
 const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' });
@@ -22,7 +23,7 @@ const loadSavedIds = () => {
 // خانة الأسماء مش بتتملى تلقائي من كل العمال — المستخدم هو اللي بيدوّر بالاسم
 // ويختار مين يدخل الكشف، عشان يقدر يطبع كشف مخصص لموقع أو فريق معيّن.
 export default function AttendanceRollPage() {
-  const { workers } = useApp();
+  const { workers, plots, pillarBuildings } = useApp();
 
   const currentWeekStart = payWeekOf(todayISO()).start;
   const [weekStart, setWeekStart] = useState(currentWeekStart);
@@ -58,6 +59,13 @@ export default function AttendanceRollPage() {
     setSelectedIdList(prev => [...prev, w.id]);
     setSearch('');
   };
+  const locOptions = useMemo(() => locationOptions(plots || [], pillarBuildings || []), [plots, pillarBuildings]);
+  const addLocationWorkers = (value) => {
+    if (!value) return;
+    const ids = workers.filter(w => w.status === 'active' && matchesLocation(w, value)).map(w => w.id);
+    if (ids.length === 0) { alert('مفيش عمال نشطين في المكان ده.'); return; }
+    setSelectedIdList(prev => [...prev, ...ids.filter(id => !prev.includes(id))]);
+  };
   const removeWorker = (id) => setSelectedIdList(prev => prev.filter(x => x !== id));
   const clearAll = () => { if (window.confirm('هل تريد إفراغ الكشف من كل العمال؟')) setSelectedIdList([]); };
 
@@ -83,6 +91,12 @@ export default function AttendanceRollPage() {
           <h2 className="text-2xl font-bold text-gray-800">طباعة التمام</h2>
           <p className="text-xs text-gray-400 mt-1">كشف ورقي فاضي يوقّع عليه التايم كيبر يوميًا بالقلم — اختار العمال والأسبوع واطبع</p>
         </div>
+        <select value="" onChange={e => addLocationWorkers(e.target.value)}
+          title="إضافة كل عمال مكان العمل للكشف"
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
+          <option value="">+ إضافة عمال مكان عمل</option>
+          {locOptions.map(o => <option key={o.value} value={o.value}>{o.isZone ? `${o.label} (كل المنطقة)` : o.label}</option>)}
+        </select>
         <button onClick={handlePrint} disabled={sortedSelected.length === 0}
           title="طباعة كشف التمام بالعمال والأسبوع المختارين"
           className="bg-primary-600 hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
