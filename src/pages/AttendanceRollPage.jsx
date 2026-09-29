@@ -23,7 +23,7 @@ const loadSavedIds = () => {
 // خانة الأسماء مش بتتملى تلقائي من كل العمال — المستخدم هو اللي بيدوّر بالاسم
 // ويختار مين يدخل الكشف، عشان يقدر يطبع كشف مخصص لموقع أو فريق معيّن.
 export default function AttendanceRollPage() {
-  const { workers, plots, pillarBuildings } = useApp();
+  const { workers, workLocations } = useApp();
 
   const currentWeekStart = payWeekOf(todayISO()).start;
   const [weekStart, setWeekStart] = useState(currentWeekStart);
@@ -32,6 +32,7 @@ export default function AttendanceRollPage() {
 
   const [search, setSearch] = useState('');
   const [selectedIdList, setSelectedIdList] = useState(loadSavedIds);
+  const [quickPrintLoc, setQuickPrintLoc] = useState('');
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedIdList)); } catch { /* التخزين مش متاح */ }
@@ -59,10 +60,10 @@ export default function AttendanceRollPage() {
     setSelectedIdList(prev => [...prev, w.id]);
     setSearch('');
   };
-  const locOptions = useMemo(() => locationOptions(plots || [], pillarBuildings || []), [plots, pillarBuildings]);
+  const locOptions = useMemo(() => locationOptions(workLocations || []), [workLocations]);
   const addLocationWorkers = (value) => {
     if (!value) return;
-    const ids = workers.filter(w => w.status === 'active' && matchesLocation(w, value)).map(w => w.id);
+    const ids = workers.filter(w => w.status === 'active' && matchesLocation(w, value, workLocations)).map(w => w.id);
     if (ids.length === 0) { alert('مفيش عمال نشطين في المكان ده.'); return; }
     setSelectedIdList(prev => [...prev, ...ids.filter(id => !prev.includes(id))]);
   };
@@ -84,6 +85,17 @@ export default function AttendanceRollPage() {
     printAttendanceRollSheet({ workers: sortedSelected, days, weekLabel });
   };
 
+  // طباعة كشف مكان واحد بضغطة: من غير ما تلمس اختيار العمال الحالي على
+  // الشاشة، بتجيب عمال المكان ده بس وتطبعهم على طول - كشف كل مكان بضغطة.
+  const handleQuickPrint = () => {
+    if (!quickPrintLoc) return;
+    const locWorkers = workers.filter(w => w.status === 'active' && matchesLocation(w, quickPrintLoc, workLocations));
+    if (locWorkers.length === 0) { alert('مفيش عمال نشطين في المكان ده.'); return; }
+    const label = locOptions.find(o => o.value === quickPrintLoc)?.label || '';
+    const sortedLocWorkers = groupRollWorkers(locWorkers).flatMap(g => g.workers);
+    printAttendanceRollSheet({ workers: sortedLocWorkers, days, weekLabel: `${label} — ${weekLabel}` });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -95,8 +107,21 @@ export default function AttendanceRollPage() {
           title="إضافة كل عمال مكان العمل للكشف"
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
           <option value="">+ إضافة عمال مكان عمل</option>
-          {locOptions.map(o => <option key={o.value} value={o.value}>{o.isZone ? `${o.label} (كل المنطقة)` : o.label}</option>)}
+          {locOptions.map(o => <option key={o.value} value={o.value}>{o.hasChildren ? `${o.label} (كل المكان)` : o.label}</option>)}
         </select>
+        <div className="flex items-center gap-1" title="طباعة كشف مكان واحد بضغطة، من غير ما تغيّر عمال الكشف فوق">
+          <select value={quickPrintLoc} onChange={e => setQuickPrintLoc(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
+            <option value="">طباعة كشف مكان مباشرة...</option>
+            {locOptions.map(o => <option key={o.value} value={o.value}>{o.hasChildren ? `${o.label} (كل المكان)` : o.label}</option>)}
+          </select>
+          <button onClick={handleQuickPrint} disabled={!quickPrintLoc}
+            title="اطبع كشف هذا المكان بضغطة"
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+            طباعة
+          </button>
+        </div>
         <button onClick={handlePrint} disabled={sortedSelected.length === 0}
           title="طباعة كشف التمام بالعمال والأسبوع المختارين"
           className="bg-primary-600 hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">

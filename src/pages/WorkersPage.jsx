@@ -4,9 +4,10 @@ import { ROLES, NO_ROLE, PAYMENT_TYPES } from '../utils/constants';
 import { COMPANY_LOGO_DATA_URI } from '../assets/companyLogo';
 import QRCode from 'qrcode';
 import { LOC_NONE, locationLabel, locationOptions, matchesLocation, parseLocation } from '../utils/locations';
+import { todayISO } from '../utils/constants';
 
 export default function WorkersPage() {
-  const { workers, addWorkersBulk, updateWorker, deleteWorker, qrCodes, generateQRCode, deleteQRCode, plots, pillarBuildings, assignWorkersToLocation } = useApp();
+  const { workers, addWorkersBulk, updateWorker, deleteWorker, qrCodes, generateQRCode, deleteQRCode, workLocations, assignWorkersToLocation, restoreWorkerLocations } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -15,8 +16,10 @@ export default function WorkersPage() {
   const [filterLoc, setFilterLoc] = useState('');
   const [showAssign, setShowAssign] = useState(false);
   const [assignTarget, setAssignTarget] = useState(LOC_NONE);
+  const [assignDateMode, setAssignDateMode] = useState('today'); // 'today' | 'later'
+  const [assignDate, setAssignDate] = useState(todayISO());
   const [assigning, setAssigning] = useState(false);
-  const locOptions = locationOptions(plots, pillarBuildings);
+  const locOptions = locationOptions(workLocations);
   const [bulkText, setBulkText] = useState('');
   const [bulkError, setBulkError] = useState('');
   const [addedCount, setAddedCount] = useState(0);
@@ -26,7 +29,7 @@ export default function WorkersPage() {
   const [previewWorker, setPreviewWorker] = useState(null);
   const [qrImageUrl, setQrImageUrl] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [lastAssign, setLastAssign] = useState(null); // { count, label, prev: [{ids, plotId, buildingId}] } للتراجع
+  const [lastAssign, setLastAssign] = useState(null); // { count, label, prev: [{ids, locationId, pendingLocationId, pendingLocationDate}] } للتراجع
   const emptyWorker = { name: '', role: NO_ROLE, dailyWage: '', status: 'active', phone: '', notes: '', walletNumber: '', walletName: '' };
   const [forms, setForms] = useState([{ ...emptyWorker }]);
   const fileRef = useRef();
@@ -43,7 +46,7 @@ export default function WorkersPage() {
 
   const filtered = workers.filter(w => {
     if (filterRole && w.role !== filterRole) return false;
-    if (!matchesLocation(w, filterLoc)) return false;
+    if (!matchesLocation(w, filterLoc, workLocations)) return false;
     if (search && !w.name.includes(search) && !w.code.includes(search)) return false;
     return true;
   });
@@ -322,7 +325,7 @@ export default function WorkersPage() {
   const currentLocationSummary = (() => {
     const map = new Map();
     workers.filter(w => selectedIds.has(w.id)).forEach(w => {
-      const label = locationLabel(w, plots, pillarBuildings) || 'بدون تحديد';
+      const label = locationLabel(w, workLocations) || 'بدون تحديد';
       map.set(label, (map.get(label) || 0) + 1);
     });
     return [...map.entries()].map(([label, count]) => ({ label, count }));
@@ -332,15 +335,26 @@ export default function WorkersPage() {
     setAssigning(true);
     try {
       const ids = [...selectedIds];
-      // نحفظ المكان القديم لكل مجموعة عشان زر التراجع
+      // نحفظ المكان القديم (والنقل المجدول القديم لو موجود) لكل مجموعة عشان زر التراجع
       const groups = new Map();
       workers.filter(w => selectedIds.has(w.id)).forEach(w => {
-        const key = `${w.plotId || ''}|${w.buildingId || ''}`;
-        if (!groups.has(key)) groups.set(key, { ids: [], plotId: w.plotId || null, buildingId: w.buildingId || null });
+        const key = `${w.locationId || ''}|${w.pendingLocationId || ''}|${w.pendingLocationDate || ''}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            ids: [],
+            locationId: w.locationId || null,
+            pendingLocationId: w.pendingLocationId || null,
+            pendingLocationDate: w.pendingLocationDate || null,
+          });
+        }
         groups.get(key).ids.push(w.id);
       });
-      await assignWorkersToLocation(parseLocation(assignTarget), ids);
-      setLastAssign({ count: ids.length, label: assignTargetLabel, prev: [...groups.values()] });
+      const effectiveDate = assignDateMode === 'later' ? assignDate : todayISO();
+      await assignWorkersToLocation(parseLocation(assignTarget), ids, effectiveDate);
+      const label = assignDateMode === 'later'
+        ? `${assignTargetLabel} (اعتبارًا من ${assignDate})`
+        : assignTargetLabel;
+      setLastAssign({ count: ids.length, label, prev: [...groups.values()] });
       setShowAssign(false);
       setSelectedIds(new Set());
     } catch (err) {
@@ -354,9 +368,7 @@ export default function WorkersPage() {
     if (!lastAssign) return;
     setAssigning(true);
     try {
-      for (const g of lastAssign.prev) {
-        await assignWorkersToLocation({ plotId: g.plotId, buildingId: g.buildingId }, g.ids);
-      }
+      await restoreWorkerLocations(lastAssign.prev);
       setLastAssign(null);
     } catch (err) {
       alert('فشل التراجع: ' + (err.message || 'خطأ غير متوقع'));
@@ -393,8 +405,16 @@ export default function WorkersPage() {
             className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
             تصدير CSV
           </button>
+          {filtered.length > 0 && (
+            <button onClick={toggleSelectAllFiltered}
+              className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition">
+              {filtered.length > 0 && filtered.every(w => selectedIds.has(w.id))
+                ? 'إلغاء تحديد نتائج البحث'
+                : `تحديد كل نتائج البحث (${filtered.length.toLocaleString('ar-EG')})`}
+            </button>
+          )}
           {selectedIds.size > 0 && (
-            <button onClick={() => { setAssignTarget(LOC_NONE); setShowAssign(true); }}
+            <button onClick={() => { setAssignTarget(LOC_NONE); setAssignDateMode('today'); setAssignDate(todayISO()); setShowAssign(true); }}
               className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
               تعيين العمال ({selectedIds.size.toLocaleString('ar-EG')})
             </button>
@@ -426,7 +446,7 @@ export default function WorkersPage() {
           <select value={filterLoc} onChange={e => setFilterLoc(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
             <option value="">كل أماكن العمل</option>
-            {locOptions.map(o => <option key={o.value} value={o.value}>{o.isZone ? `${o.label} (كل المنطقة)` : o.label}</option>)}
+            {locOptions.map(o => <option key={o.value} value={o.value}>{o.hasChildren ? `${o.label} (كل المكان)` : o.label}</option>)}
             <option value={LOC_NONE}>بدون تحديد</option>
           </select>
         </div>
@@ -467,7 +487,12 @@ export default function WorkersPage() {
                     <span className="bg-primary-50 text-primary-700 px-2 py-1 rounded text-xs">{w.role}</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-600">
-                    {locationLabel(w, plots, pillarBuildings) || <span className="text-gray-300">بدون تحديد</span>}
+                    {locationLabel(w, workLocations) || <span className="text-gray-300">بدون تحديد</span>}
+                    {w.pendingLocationId !== undefined && w.pendingLocationDate && (
+                      <div className="text-[11px] text-amber-600 mt-0.5">
+                        → {locationLabel({ locationId: w.pendingLocationId }, workLocations) || 'بدون تحديد'} من {w.pendingLocationDate}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {Number(w.dailyWage) > 0 ? (
@@ -692,7 +717,7 @@ export default function WorkersPage() {
               {workers.filter(w => selectedIds.has(w.id)).map(w => (
                 <div key={w.id} className="flex justify-between gap-2">
                   <span>{w.name}</span>
-                  <span className="text-gray-400">{locationLabel(w, plots, pillarBuildings) || 'بدون تحديد'}</span>
+                  <span className="text-gray-400">{locationLabel(w, workLocations) || 'بدون تحديد'}</span>
                 </div>
               ))}
             </div>
@@ -701,8 +726,30 @@ export default function WorkersPage() {
               <select value={assignTarget} onChange={e => setAssignTarget(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
                 <option value={LOC_NONE}>بدون تحديد</option>
-                {locOptions.map(o => <option key={o.value} value={o.value}>{o.isZone ? `${o.label} (المنطقة كلها)` : o.label}</option>)}
+                {locOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">سريان النقل</label>
+              <div className="flex gap-3 items-center">
+                <label className="flex items-center gap-1.5 text-sm text-gray-600">
+                  <input type="radio" checked={assignDateMode === 'today'} onChange={() => setAssignDateMode('today')} />
+                  من النهارده
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-gray-600">
+                  <input type="radio" checked={assignDateMode === 'later'} onChange={() => setAssignDateMode('later')} />
+                  من تاريخ معين
+                </label>
+                {assignDateMode === 'later' && (
+                  <input type="date" value={assignDate} min={todayISO()} onChange={e => setAssignDate(e.target.value)}
+                    className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+                )}
+              </div>
+              {assignDateMode === 'later' && (
+                <p className="text-xs text-gray-400 mt-1">
+                  المكان الحالي هيفضل زي ما هو لحد {assignDate}، وبعدها يتحوّل تلقائي.
+                </p>
+              )}
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <button disabled={assigning} onClick={() => setShowAssign(false)}

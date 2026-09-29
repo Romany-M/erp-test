@@ -18,7 +18,8 @@ const MAPS = {
     ['id', 'id'], ['code', 'code'], ['name', 'name'], ['role', 'role'],
     ['dailyWage', 'daily_wage'], ['status', 'status'], ['phone', 'phone'],
     ['notes', 'notes'], ['walletNumber', 'wallet_number'], ['walletName', 'wallet_name'],
-    ['apartmentId', 'apartment_id'], ['plotId', 'plot_id'], ['buildingId', 'building_id'],
+    ['apartmentId', 'apartment_id'], ['locationId', 'location_id'],
+    ['pendingLocationId', 'pending_location_id'], ['pendingLocationDate', 'pending_location_date'],
     ['createdAt', 'created_at'],
   ],
   attendance: [
@@ -26,7 +27,7 @@ const MAPS = {
     ['workerCode', 'worker_code'], ['role', 'role'], ['date', 'date'],
     ['status', 'status'], ['overtimeFraction', 'overtime_fraction'],
     ['overtimeValue', 'overtime_value'], ['pillarCost', 'pillar_cost'],
-    ['deduction', 'deduction'], ['plotId', 'plot_id'], ['buildingId', 'building_id'],
+    ['deduction', 'deduction'], ['locationId', 'location_id'],
     ['createdAt', 'created_at'],
   ],
   advances: [
@@ -106,13 +107,16 @@ const MAPS = {
     ['apartmentNumber', 'apartment_number'], ['rooms', 'rooms'], ['notes', 'notes'],
     ['createdAt', 'created_at'],
   ],
+  work_locations: [
+    ['id', 'id'], ['name', 'name'], ['parentId', 'parent_id'], ['createdAt', 'created_at'],
+  ],
 };
 
 // UUID foreign-key columns per table: empty strings must become NULL
 // before being sent to Postgres, or the insert/update fails outright.
 const UUID_FIELDS = {
-  workers: ['apartmentId', 'plotId', 'buildingId'],
-  attendance: ['workerId', 'plotId', 'buildingId'],
+  workers: ['apartmentId', 'locationId', 'pendingLocationId'],
+  attendance: ['workerId', 'locationId'],
   advances: ['workerId'],
   custody: ['workerId'],
   food_expenses: [],
@@ -130,6 +134,7 @@ const UUID_FIELDS = {
   budget_history: [],
   housing_apartments: [],
   weekly_budgets: [],
+  work_locations: ['parentId'],
 };
 
 function toDb(table, obj) {
@@ -181,6 +186,7 @@ const initialState = {
   contractorReceipts: [],
   housingApartments: [],
   weeklyBudgets: [],
+  workLocations: [],
   payrollRange: { from: '', to: '' },
 };
 
@@ -273,6 +279,7 @@ export function AppProvider({ children }) {
         transfersRes, externalRes, pillarsRes, budgetsRes, budgetHistoryRes,
         paymentsRes, buildingsRes, plotsRes, qrCodesRes, qrAttendanceRes,
         contractorsRes, contractorPaymentsRes, contractorReceiptsRes, payrollRangeRes, housingRes, weeklyBudgetsRes,
+        workLocationsRes,
       ] = await Promise.all([
         fetchAllRows('workers', { orderBy: { column: 'created_at', ascending: true } }),
         fetchAllRows('attendance'),
@@ -296,6 +303,7 @@ export function AppProvider({ children }) {
         supabase.from('payroll_range').select('*').maybeSingle(),
         supabase.from('housing_apartments').select('*'),
         supabase.from('weekly_budgets').select('*'),
+        supabase.from('work_locations').select('*'),
       ]);
 
       const results = [
@@ -319,12 +327,42 @@ export function AppProvider({ children }) {
       if (contractorReceiptsRes.error) {
         console.warn('contractor_receipts not available yet - run the receipt-numbering SQL migration:', contractorReceiptsRes.error);
       }
+      if (workLocationsRes.error) {
+        console.warn('work_locations not available yet - run the supabase-work-locations.sql migration:', workLocationsRes.error);
+      }
 
       const budgetsMap = { cash: 0, insta: 0 };
       (budgetsRes.data || []).forEach(b => { budgetsMap[b.type] = Number(b.amount) || 0; });
 
+      // نقل مجدول (تاريخ سريان مستقبلي) وصل تاريخه: نطبّقه على الشاشة على
+      // طول (location_id = المكان الجديد)، وفي الخلفية من غير ما نستنى
+      // نحدّث قاعدة البيانات بنفس الحاجة - مفيش وظيفة مجدولة على السيرفر،
+      // فالتفعيل بيحصل أول ما حد يفتح النظام في يوم السريان أو بعده.
+      const today = todayISO();
+      const rawWorkers = fromDbList('workers', workersRes.data);
+      const dueWorkers = rawWorkers.filter(w => w.pendingLocationDate && w.pendingLocationDate <= today);
+      const workersLoaded = rawWorkers.map(w => (
+        (w.pendingLocationDate && w.pendingLocationDate <= today)
+          ? { ...w, locationId: w.pendingLocationId, pendingLocationId: null, pendingLocationDate: null }
+          : w
+      ));
+      if (dueWorkers.length > 0) {
+        const byTarget = new Map();
+        dueWorkers.forEach(w => {
+          const key = w.pendingLocationId || '__null__';
+          if (!byTarget.has(key)) byTarget.set(key, []);
+          byTarget.get(key).push(w.id);
+        });
+        byTarget.forEach((ids, key) => {
+          supabase.from('workers')
+            .update({ location_id: key === '__null__' ? null : key, pending_location_id: null, pending_location_date: null })
+            .in('id', ids)
+            .then(({ error }) => { if (error) console.warn('applying scheduled location transfer failed:', error); });
+        });
+      }
+
       setState({
-        workers: fromDbList('workers', workersRes.data),
+        workers: workersLoaded,
         attendance: fromDbList('attendance', attendanceRes.data),
         advances: fromDbList('advances', advancesRes.data),
         custody: fromDbList('custody', custodyRes.data),
@@ -345,6 +383,7 @@ export function AppProvider({ children }) {
         contractorReceipts: contractorReceiptsRes.error ? [] : fromDbList('contractor_receipts', contractorReceiptsRes.data),
         housingApartments: housingRes.error ? [] : fromDbList('housing_apartments', housingRes.data),
         weeklyBudgets: weeklyBudgetsRes.error ? [] : fromDbList('weekly_budgets', weeklyBudgetsRes.data),
+        workLocations: workLocationsRes.error ? [] : fromDbList('work_locations', workLocationsRes.data),
         payrollRange: {
           from: payrollRangeRes.data?.date_from || '',
           to: payrollRangeRes.data?.date_to || '',
@@ -443,10 +482,10 @@ export function AppProvider({ children }) {
   // وإلا نقل العامل لمكان تاني هيحرّك تكلفة أيامه القديمة معاه.
   const withLocation = useCallback((record, existing) => {
     if (existing) return record;
-    if ('plotId' in record || 'buildingId' in record) return record;
+    if ('locationId' in record) return record;
     const w = state.workers.find(x => x.id === record.workerId);
-    if (!w || (!w.plotId && !w.buildingId)) return record;
-    return { ...record, plotId: w.plotId || null, buildingId: w.buildingId || null };
+    if (!w || !w.locationId) return record;
+    return { ...record, locationId: w.locationId };
   }, [state.workers]);
 
   const addAttendance = useCallback(async (rec) => {
@@ -934,19 +973,31 @@ export function AppProvider({ children }) {
     }));
   }, []);
 
-  // تعيين مجموعة عمال في مكان عمل بطلب واحد. buildingId يحدد المنطقة تلقائي،
-  // ولو اتبعت plotId بس العامل بيتعيّن على المنطقة من غير مبنى. الاتنين null = بدون تحديد.
-  // بيأثر على الأيام الجاية بس: سجلات الحضور القديمة بتفضل على مكانها وقت التسجيل.
-  const assignWorkersToLocation = useCallback(async ({ plotId = null, buildingId = null }, workerIds) => {
+  // ---------------- أماكن العمل (work_locations) ----------------
+  const addWorkLocation = useCallback(
+    (location) => insertRow('work_locations', 'workLocations', location), [insertRow]);
+  const updateWorkLocation = useCallback(
+    (id, data) => updateRow('work_locations', 'workLocations', id, data), [updateRow]);
+  const deleteWorkLocation = useCallback(
+    (id) => deleteRow('work_locations', 'workLocations', id), [deleteRow]);
+
+  // تعيين مجموعة عمال في مكان عمل بطلب واحد. locationId فاضي = بدون تحديد
+  // (قيمة NULL حقيقية، مش صف وهمي). effectiveDate اختياري: لو مش بعت حاجة
+  // أو بعت النهارده أو تاريخ فات، النقل بيسري فورًا. لو بعت تاريخ مستقبلي،
+  // بيتخزن كنقل مجدول (pending) وبيتفعّل تلقائي أول ما حد يفتح النظام في
+  // يوم السريان أو بعده - شوف applyDuePendingTransfers في loadAllData.
+  // في الحالتين: بيأثر على الأيام الجاية بس، سجلات الحضور القديمة بتفضل
+  // على مكانها وقت التسجيل.
+  const assignWorkersToLocation = useCallback(async (locationId, workerIds, effectiveDate = null) => {
     if (!workerIds || workerIds.length === 0) return;
-    let plot = plotId || null;
-    if (buildingId) {
-      const b = state.pillarBuildings.find(x => x.id === buildingId);
-      plot = b?.plotId || plot;
-    }
+    const today = todayISO();
+    const eff = effectiveDate || today;
+    const dbPatch = (eff <= today)
+      ? { location_id: locationId || null, pending_location_id: null, pending_location_date: null }
+      : { pending_location_id: locationId || null, pending_location_date: eff };
     const { data, error } = await supabase
       .from('workers')
-      .update({ plot_id: plot, building_id: buildingId || null })
+      .update(dbPatch)
       .in('id', workerIds)
       .select();
     if (error) { console.error('assign workers to location failed:', error); throw error; }
@@ -956,7 +1007,31 @@ export function AppProvider({ children }) {
       workers: prev.workers.map(w => updated.find(u => u.id === w.id) || w),
     }));
     return updated;
-  }, [state.pillarBuildings]);
+  }, []);
+
+  // لزرار التراجع بعد تعيين جماعي: بيرجّع location_id/pendingLocationId/
+  // pendingLocationDate بالظبط زي ما كانوا قبل التعيين، مجموعة مجموعة.
+  const restoreWorkerLocations = useCallback(async (groups) => {
+    let updated = [];
+    for (const g of groups) {
+      const { data, error } = await supabase
+        .from('workers')
+        .update({
+          location_id: g.locationId || null,
+          pending_location_id: g.pendingLocationId || null,
+          pending_location_date: g.pendingLocationDate || null,
+        })
+        .in('id', g.ids)
+        .select();
+      if (error) { console.error('undo assign workers to location failed:', error); throw error; }
+      updated = updated.concat(fromDbList('workers', data));
+    }
+    setState(prev => ({
+      ...prev,
+      workers: prev.workers.map(w => updated.find(u => u.id === w.id) || w),
+    }));
+    return updated;
+  }, []);
 
   // ---------------- Derived totals (kept for API compatibility) ----------------
   const getTotalExpenses = useCallback((type = null) => {
@@ -1019,10 +1094,14 @@ export function AppProvider({ children }) {
     addBuilding,
     updateBuilding,
     deleteBuilding,
-    assignWorkersToLocation,
     addPlot,
     updatePlot,
     deletePlot,
+    addWorkLocation,
+    updateWorkLocation,
+    deleteWorkLocation,
+    assignWorkersToLocation,
+    restoreWorkerLocations,
     updateBudget,
     addPayment,
     deletePayment,
