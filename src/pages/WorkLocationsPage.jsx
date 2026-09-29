@@ -40,17 +40,44 @@ function LocationWorkers({ locationId, workers, onRemove, onAdd }) {
 }
 
 export default function WorkLocationsPage() {
-  const { workers, workLocations, addWorkLocation, updateWorkLocation, deleteWorkLocation, assignWorkersToLocation } = useApp();
+  const { workers, attendance, workLocations, addWorkLocation, updateWorkLocation, deleteWorkLocation, assignWorkersToLocation } = useApp();
 
   const [showAddArea, setShowAddArea] = useState(false);
   const [areaForm, setAreaForm] = useState({ name: '', buildingName: '' });
   const [addBuildingFor, setAddBuildingFor] = useState(null); // area id اللي بنضيفله مبنى دلوقتي
   const [buildingName, setBuildingName] = useState('');
   const [renaming, setRenaming] = useState(null); // { id, name }
+  const [showUnassigned, setShowUnassigned] = useState(false);
 
   const areas = useMemo(() => workLocations.filter(l => !l.parentId).sort((a, b) => a.name.localeCompare(b.name, 'ar')), [workLocations]);
   const buildingsOf = (areaId) => workLocations.filter(l => l.parentId === areaId).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
   const countAt = (locationId) => workers.filter(w => w.locationId === locationId).length;
+
+  // تكلفة مكان واحد بس (مش شامل الأبناء): من سجلات الحضور اللي اتختمت
+  // بالمكان ده وقت تسجيلها. نفس معادلة حساب المرتب بالظبط (يومية + أوفرتايم
+  // - خصم) عشان الرقم يطابق القبض، مش رقم منفصل تاني.
+  const ownCost = (locationId) => {
+    const recs = attendance.filter(a => a.locationId === locationId);
+    const present = recs.filter(a => a.status === 'present' && !(a.pillarCost > 0));
+    const daysPay = present.reduce((s, a) => {
+      const w = workers.find(x => x.id === a.workerId);
+      return s + (w?.dailyWage || 0);
+    }, 0);
+    const overtime = recs.reduce((s, a) => s + (a.overtimeValue || 0), 0);
+    const deductions = recs.reduce((s, a) => s + (a.deduction || 0), 0);
+    return { days: present.length, total: daysPay + overtime - deductions };
+  };
+
+  // تكلفة المنطقة = تكلفة عمالها المباشرين + تكلفة كل مبانيها.
+  const areaCost = (areaId) => {
+    const own = ownCost(areaId);
+    return buildingsOf(areaId).reduce((acc, b) => {
+      const bc = ownCost(b.id);
+      return { days: acc.days + bc.days, total: acc.total + bc.total };
+    }, own);
+  };
+
+  const fmtMoney = (n) => `${n.toLocaleString('ar-EG')} ج.م`;
 
   const handleAssign = (locationId, workerId) => assignWorkersToLocation(locationId, [workerId]);
   const handleUnassign = (workerId) => assignWorkersToLocation(null, [workerId]);
@@ -131,6 +158,17 @@ export default function WorkLocationsPage() {
             <LocationWorkers locationId={area.id} workers={workers}
               onAdd={(wid) => handleAssign(area.id, wid)} onRemove={handleUnassign} />
 
+            <div className="grid grid-cols-2 gap-2 text-sm mt-3">
+              <div className="bg-blue-50 rounded p-2 text-center">
+                <p className="text-xs text-blue-600">أيام عمل محسوبة</p>
+                <p className="font-bold text-blue-800">{areaCost(area.id).days}</p>
+              </div>
+              <div className="bg-gray-50 rounded p-2 text-center">
+                <p className="text-xs text-gray-500">إجمالي تكلفة المنطقة</p>
+                <p className="font-bold text-gray-800">{fmtMoney(areaCost(area.id).total)}</p>
+              </div>
+            </div>
+
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
               {buildingsOf(area.id).map(b => (
                 <div key={b.id} className="bg-gray-50 rounded-lg p-3">
@@ -150,6 +188,16 @@ export default function WorkLocationsPage() {
                   </div>
                   <LocationWorkers locationId={b.id} workers={workers}
                     onAdd={(wid) => handleAssign(b.id, wid)} onRemove={handleUnassign} />
+                  <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+                    <div className="bg-blue-50 rounded p-1.5 text-center">
+                      <p className="text-blue-600">أيام محسوبة</p>
+                      <p className="font-bold text-blue-800">{ownCost(b.id).days}</p>
+                    </div>
+                    <div className="bg-white rounded p-1.5 text-center border border-gray-100">
+                      <p className="text-gray-500">التكلفة</p>
+                      <p className="font-bold text-gray-800">{fmtMoney(ownCost(b.id).total)}</p>
+                    </div>
+                  </div>
                 </div>
               ))}
 
@@ -179,13 +227,20 @@ export default function WorkLocationsPage() {
 
       {unassignedWorkers.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-dashed border-gray-300 p-5">
-          <h3 className="font-bold text-gray-600 mb-1">عمال بدون تحديد ({unassignedWorkers.length})</h3>
-          <p className="text-xs text-gray-400 mb-3">سواقين، مشرفين، وعمالة متحركة - طبيعي يفضلوا من غير مكان ثابت</p>
-          <div className="flex flex-wrap gap-1.5">
-            {unassignedWorkers.map(w => (
-              <span key={w.id} className="bg-gray-50 text-gray-600 text-xs px-2 py-1 rounded-full">{w.name}</span>
-            ))}
-          </div>
+          <button onClick={() => setShowUnassigned(v => !v)} className="w-full flex items-center justify-between text-right">
+            <div>
+              <h3 className="font-bold text-gray-600">عمال بدون تحديد ({unassignedWorkers.length})</h3>
+              <p className="text-xs text-gray-400 mt-0.5">سواقين، مشرفين، وعمالة متحركة - طبيعي يفضلوا من غير مكان ثابت</p>
+            </div>
+            <svg className={`w-5 h-5 text-gray-400 transition-transform ${showUnassigned ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {showUnassigned && (
+            <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-gray-100">
+              {unassignedWorkers.map(w => (
+                <span key={w.id} className="bg-gray-50 text-gray-600 text-xs px-2 py-1 rounded-full">{w.name}</span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
