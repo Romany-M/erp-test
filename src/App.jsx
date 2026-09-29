@@ -12,7 +12,6 @@ import ExpensesPage from './pages/ExpensesPage';
 import PurchasesPage from './pages/PurchasesPage';
 import TransfersPage from './pages/TransfersPage';
 import ExternalTransfersPage from './pages/ExternalTransfersPage';
-import PillarsPage from './pages/PillarsPage';
 import WorkLocationsPage from './pages/WorkLocationsPage';
 import BudgetPage from './pages/BudgetPage';
 import PayrollPage from './pages/PayrollPage';
@@ -86,7 +85,6 @@ function AppRoutes() {
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="transfers" element={<TransfersPage />} />
         <Route path="external-transfers" element={<ExternalTransfersPage />} />
-        <Route path="pillars" element={<PillarsPage />} />
         <Route path="budget" element={<BudgetPage />} />
         <Route path="payroll" element={<PayrollPage />} />
         <Route path="reports" element={<ReportsPage />} />
