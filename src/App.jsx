@@ -13,6 +13,7 @@ import PurchasesPage from './pages/PurchasesPage';
 import TransfersPage from './pages/TransfersPage';
 import ExternalTransfersPage from './pages/ExternalTransfersPage';
 import PillarsPage from './pages/PillarsPage';
+import WorkLocationsPage from './pages/WorkLocationsPage';
 import BudgetPage from './pages/BudgetPage';
 import PayrollPage from './pages/PayrollPage';
 import ReportsPage from './pages/ReportsPage';
@@ -77,6 +78,7 @@ function AppRoutes() {
       <Route path="/" element={<PrivateRoute><RoleGate><Layout /></RoleGate></PrivateRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="workers" element={<WorkersPage />} />
+        <Route path="work-locations" element={<WorkLocationsPage />} />
         <Route path="attendance" element={<AttendancePage />} />
         <Route path="advances" element={<AdvancesPage />} />
         <Route path="custody" element={<CustodyPage />} />

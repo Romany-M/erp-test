@@ -19,7 +19,6 @@ const MAPS = {
     ['dailyWage', 'daily_wage'], ['status', 'status'], ['phone', 'phone'],
     ['notes', 'notes'], ['walletNumber', 'wallet_number'], ['walletName', 'wallet_name'],
     ['apartmentId', 'apartment_id'], ['locationId', 'location_id'],
-    ['pendingLocationId', 'pending_location_id'], ['pendingLocationDate', 'pending_location_date'],
     ['createdAt', 'created_at'],
   ],
   attendance: [
@@ -115,7 +114,7 @@ const MAPS = {
 // UUID foreign-key columns per table: empty strings must become NULL
 // before being sent to Postgres, or the insert/update fails outright.
 const UUID_FIELDS = {
-  workers: ['apartmentId', 'locationId', 'pendingLocationId'],
+  workers: ['apartmentId', 'locationId'],
   attendance: ['workerId', 'locationId'],
   advances: ['workerId'],
   custody: ['workerId'],
@@ -334,35 +333,8 @@ export function AppProvider({ children }) {
       const budgetsMap = { cash: 0, insta: 0 };
       (budgetsRes.data || []).forEach(b => { budgetsMap[b.type] = Number(b.amount) || 0; });
 
-      // نقل مجدول (تاريخ سريان مستقبلي) وصل تاريخه: نطبّقه على الشاشة على
-      // طول (location_id = المكان الجديد)، وفي الخلفية من غير ما نستنى
-      // نحدّث قاعدة البيانات بنفس الحاجة - مفيش وظيفة مجدولة على السيرفر،
-      // فالتفعيل بيحصل أول ما حد يفتح النظام في يوم السريان أو بعده.
-      const today = todayISO();
-      const rawWorkers = fromDbList('workers', workersRes.data);
-      const dueWorkers = rawWorkers.filter(w => w.pendingLocationDate && w.pendingLocationDate <= today);
-      const workersLoaded = rawWorkers.map(w => (
-        (w.pendingLocationDate && w.pendingLocationDate <= today)
-          ? { ...w, locationId: w.pendingLocationId, pendingLocationId: null, pendingLocationDate: null }
-          : w
-      ));
-      if (dueWorkers.length > 0) {
-        const byTarget = new Map();
-        dueWorkers.forEach(w => {
-          const key = w.pendingLocationId || '__null__';
-          if (!byTarget.has(key)) byTarget.set(key, []);
-          byTarget.get(key).push(w.id);
-        });
-        byTarget.forEach((ids, key) => {
-          supabase.from('workers')
-            .update({ location_id: key === '__null__' ? null : key, pending_location_id: null, pending_location_date: null })
-            .in('id', ids)
-            .then(({ error }) => { if (error) console.warn('applying scheduled location transfer failed:', error); });
-        });
-      }
-
       setState({
-        workers: workersLoaded,
+        workers: fromDbList('workers', workersRes.data),
         attendance: fromDbList('attendance', attendanceRes.data),
         advances: fromDbList('advances', advancesRes.data),
         custody: fromDbList('custody', custodyRes.data),
@@ -982,50 +954,17 @@ export function AppProvider({ children }) {
     (id) => deleteRow('work_locations', 'workLocations', id), [deleteRow]);
 
   // تعيين مجموعة عمال في مكان عمل بطلب واحد. locationId فاضي = بدون تحديد
-  // (قيمة NULL حقيقية، مش صف وهمي). effectiveDate اختياري: لو مش بعت حاجة
-  // أو بعت النهارده أو تاريخ فات، النقل بيسري فورًا. لو بعت تاريخ مستقبلي،
-  // بيتخزن كنقل مجدول (pending) وبيتفعّل تلقائي أول ما حد يفتح النظام في
-  // يوم السريان أو بعده - شوف applyDuePendingTransfers في loadAllData.
-  // في الحالتين: بيأثر على الأيام الجاية بس، سجلات الحضور القديمة بتفضل
-  // على مكانها وقت التسجيل.
-  const assignWorkersToLocation = useCallback(async (locationId, workerIds, effectiveDate = null) => {
+  // (قيمة NULL حقيقية، مش صف وهمي). بيأثر على الأيام الجاية بس: سجلات
+  // الحضور القديمة بتفضل على مكانها وقت التسجيل (withLocation فوق).
+  const assignWorkersToLocation = useCallback(async (locationId, workerIds) => {
     if (!workerIds || workerIds.length === 0) return;
-    const today = todayISO();
-    const eff = effectiveDate || today;
-    const dbPatch = (eff <= today)
-      ? { location_id: locationId || null, pending_location_id: null, pending_location_date: null }
-      : { pending_location_id: locationId || null, pending_location_date: eff };
     const { data, error } = await supabase
       .from('workers')
-      .update(dbPatch)
+      .update({ location_id: locationId || null })
       .in('id', workerIds)
       .select();
     if (error) { console.error('assign workers to location failed:', error); throw error; }
     const updated = fromDbList('workers', data);
-    setState(prev => ({
-      ...prev,
-      workers: prev.workers.map(w => updated.find(u => u.id === w.id) || w),
-    }));
-    return updated;
-  }, []);
-
-  // لزرار التراجع بعد تعيين جماعي: بيرجّع location_id/pendingLocationId/
-  // pendingLocationDate بالظبط زي ما كانوا قبل التعيين، مجموعة مجموعة.
-  const restoreWorkerLocations = useCallback(async (groups) => {
-    let updated = [];
-    for (const g of groups) {
-      const { data, error } = await supabase
-        .from('workers')
-        .update({
-          location_id: g.locationId || null,
-          pending_location_id: g.pendingLocationId || null,
-          pending_location_date: g.pendingLocationDate || null,
-        })
-        .in('id', g.ids)
-        .select();
-      if (error) { console.error('undo assign workers to location failed:', error); throw error; }
-      updated = updated.concat(fromDbList('workers', data));
-    }
     setState(prev => ({
       ...prev,
       workers: prev.workers.map(w => updated.find(u => u.id === w.id) || w),
@@ -1101,7 +1040,6 @@ export function AppProvider({ children }) {
     updateWorkLocation,
     deleteWorkLocation,
     assignWorkersToLocation,
-    restoreWorkerLocations,
     updateBudget,
     addPayment,
     deletePayment,
