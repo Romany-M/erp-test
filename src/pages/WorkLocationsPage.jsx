@@ -47,16 +47,21 @@ export default function WorkLocationsPage() {
   const [addBuildingFor, setAddBuildingFor] = useState(null); // area id اللي بنضيفله مبنى دلوقتي
   const [buildingName, setBuildingName] = useState('');
   const [renaming, setRenaming] = useState(null); // { id, name }
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const areas = useMemo(() => workLocations.filter(l => !l.parentId).sort((a, b) => a.name.localeCompare(b.name, 'ar')), [workLocations]);
   const buildingsOf = (areaId) => workLocations.filter(l => l.parentId === areaId).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
   const countAt = (locationId) => workers.filter(w => w.locationId === locationId).length;
 
   // تكلفة مكان واحد بس (مش شامل الأبناء): من سجلات الحضور اللي اتختمت
-  // بالمكان ده وقت تسجيلها. نفس معادلة حساب المرتب بالظبط (يومية + أوفرتايم
-  // - خصم) عشان الرقم يطابق القبض، مش رقم منفصل تاني.
+  // بالمكان ده وقت تسجيلها، وفي حدود الفترة (من - إلى) لو محددة. نفس
+  // معادلة حساب المرتب بالظبط (يومية + أوفرتايم - خصم) عشان الرقم يطابق
+  // القبض، مش رقم منفصل تاني.
   const ownCost = (locationId) => {
-    const recs = attendance.filter(a => a.locationId === locationId);
+    let recs = attendance.filter(a => a.locationId === locationId);
+    if (dateFrom) recs = recs.filter(a => a.date >= dateFrom);
+    if (dateTo) recs = recs.filter(a => a.date <= dateTo);
     const present = recs.filter(a => a.status === 'present' && !(a.pillarCost > 0));
     const daysPay = present.reduce((s, a) => {
       const w = workers.find(x => x.id === a.workerId);
@@ -141,6 +146,23 @@ export default function WorkLocationsPage() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
           إضافة منطقة
         </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium text-gray-600">فترة حساب التكلفة:</span>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-400">من</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+          <label className="text-xs text-gray-400">إلى</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+        </div>
+        {(dateFrom || dateTo) && (
+          <button onClick={() => { setDateFrom(''); setDateTo(''); }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline">مسح الفلتر (كل الفترة)</button>
+        )}
+        <span className="text-xs text-gray-300">سايبها فاضية = من أول يوم لحد دلوقتي</span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
