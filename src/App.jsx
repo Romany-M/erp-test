@@ -13,6 +13,7 @@ import PurchasesPage from './pages/PurchasesPage';
 import TransfersPage from './pages/TransfersPage';
 import ExternalTransfersPage from './pages/ExternalTransfersPage';
 import WorkLocationsPage from './pages/WorkLocationsPage';
+import PrintFormPage from './pages/PrintFormPage';
 import BudgetPage from './pages/BudgetPage';
 import PayrollPage from './pages/PayrollPage';
 import ReportsPage from './pages/ReportsPage';
@@ -78,6 +79,7 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="workers" element={<WorkersPage />} />
         <Route path="work-locations" element={<WorkLocationsPage />} />
+        <Route path="print" element={<PrintFormPage />} />
         <Route path="attendance" element={<AttendancePage />} />
         <Route path="advances" element={<AdvancesPage />} />
         <Route path="custody" element={<CustodyPage />} />

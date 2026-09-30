@@ -370,3 +370,36 @@ export function printAttendanceRollSheet({ workers, days, weekLabel }) {
   });
 }
 
+// ============================================================================
+// 6) ورقة طباعة عامة (قسم "طباعة"): نفس شكل الشركة الثابت، بس الخانات
+//    والمسلسل وعدد الصفوف تحت تحكم المستخدم بالكامل. صفوف فاضية يملاها بخط اليد.
+// ============================================================================
+export function buildCustomSheetHtml({ title, columns, showSerial, rowCount }) {
+  const cols = (columns || []).filter(c => c.trim());
+  const colCount = cols.length + (showSerial ? 1 : 0);
+  const headers = `
+    ${showSerial ? '<th style="width:6%">م</th>' : ''}
+    ${cols.map(c => `<th>${esc(c)}</th>`).join('')}`;
+  const rows = Array.from({ length: Math.max(0, rowCount || 0) }).map((_, i) => `
+    <tr>
+      ${showSerial ? `<td class="num">${nAr(i + 1)}</td>` : ''}
+      ${cols.map(() => '<td class="day-cell"></td>').join('')}
+    </tr>`).join('');
+
+  return `
+    ${letterheadHtml(title || '')}
+    <table class="t roll">
+      <thead><tr>${headers}</tr></thead>
+      <tbody>${rows || `<tr><td colspan="${colCount || 1}" class="muted">لا توجد خانات</td></tr>`}</tbody>
+    </table>
+    <div class="doc-foot">${COMPANY_NAME} — تاريخ الطباعة: ${dateAr(todayISO())}</div>`;
+}
+
+export function printCustomSheet({ title, columns, showSerial, rowCount }) {
+  return openPrintWindow({
+    title: title || 'ورقة-طباعة',
+    body: buildCustomSheetHtml({ title, columns, showSerial, rowCount }),
+    css: ROLL_CSS,
+  });
+}
+
