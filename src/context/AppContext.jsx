@@ -955,7 +955,10 @@ export function AppProvider({ children }) {
 
   // تعيين مجموعة عمال في مكان عمل بطلب واحد. locationId فاضي = بدون تحديد
   // (قيمة NULL حقيقية، مش صف وهمي). بيأثر على الأيام الجاية بس: سجلات
-  // الحضور القديمة بتفضل على مكانها وقت التسجيل (withLocation فوق).
+  // الحضور القديمة (أمبارح وقبله) بتفضل على مكانها وقت التسجيل من غير ما
+  // نلمسها - لكن النهاردة لسه "يوم مفتوح"، فلو العامل كان أصلاً متسجل
+  // حاضر النهاردة قبل التعيين، سجل حضوره بيتحدّث بالمكان الجديد على طول
+  // عشان يتحسب في تكلفة المكان من نفس اليوم، مش بكرة.
   const assignWorkersToLocation = useCallback(async (locationId, workerIds) => {
     if (!workerIds || workerIds.length === 0) return;
     const { data, error } = await supabase
@@ -969,7 +972,57 @@ export function AppProvider({ children }) {
       ...prev,
       workers: prev.workers.map(w => updated.find(u => u.id === w.id) || w),
     }));
+
+    const today = todayISO();
+    const { data: todayRows, error: todayErr } = await supabase
+      .from('attendance')
+      .update({ location_id: locationId || null })
+      .eq('date', today)
+      .in('worker_id', workerIds)
+      .select();
+    if (todayErr) {
+      console.warn("updating today's attendance location failed:", todayErr);
+    } else if (todayRows && todayRows.length > 0) {
+      const updatedAtt = fromDbList('attendance', todayRows);
+      setState(prev => ({
+        ...prev,
+        attendance: prev.attendance.map(a => updatedAtt.find(u => u.id === a.id) || a),
+      }));
+    }
+
     return updated;
+  }, []);
+
+  // لزرار التراجع بعد تعيين جماعي: بيرجّع location_id بالظبط زي ما كان قبل
+  // التعيين، مجموعة مجموعة - وبيرجّع سجل حضور النهاردة (لو اتحدّث) لنفس المكان القديم كمان.
+  const restoreWorkerLocations = useCallback(async (groups) => {
+    const today = todayISO();
+    let updatedWorkers = [];
+    let updatedAtt = [];
+    for (const g of groups) {
+      const { data, error } = await supabase
+        .from('workers')
+        .update({ location_id: g.locationId || null })
+        .in('id', g.ids)
+        .select();
+      if (error) { console.error('undo assign workers to location failed:', error); throw error; }
+      updatedWorkers = updatedWorkers.concat(fromDbList('workers', data));
+
+      const { data: attData, error: attErr } = await supabase
+        .from('attendance')
+        .update({ location_id: g.locationId || null })
+        .eq('date', today)
+        .in('worker_id', g.ids)
+        .select();
+      if (attErr) console.warn("undo: updating today's attendance failed:", attErr);
+      else if (attData) updatedAtt = updatedAtt.concat(fromDbList('attendance', attData));
+    }
+    setState(prev => ({
+      ...prev,
+      workers: prev.workers.map(w => updatedWorkers.find(u => u.id === w.id) || w),
+      attendance: prev.attendance.map(a => updatedAtt.find(u => u.id === a.id) || a),
+    }));
+    return updatedWorkers;
   }, []);
 
   // ---------------- Derived totals (kept for API compatibility) ----------------
@@ -1039,6 +1092,7 @@ export function AppProvider({ children }) {
     addWorkLocation,
     updateWorkLocation,
     deleteWorkLocation,
+    restoreWorkerLocations,
     assignWorkersToLocation,
     updateBudget,
     addPayment,

@@ -47,7 +47,6 @@ export default function WorkLocationsPage() {
   const [addBuildingFor, setAddBuildingFor] = useState(null); // area id اللي بنضيفله مبنى دلوقتي
   const [buildingName, setBuildingName] = useState('');
   const [renaming, setRenaming] = useState(null); // { id, name }
-  const [showUnassigned, setShowUnassigned] = useState(false);
 
   const areas = useMemo(() => workLocations.filter(l => !l.parentId).sort((a, b) => a.name.localeCompare(b.name, 'ar')), [workLocations]);
   const buildingsOf = (areaId) => workLocations.filter(l => l.parentId === areaId).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
@@ -79,8 +78,17 @@ export default function WorkLocationsPage() {
 
   const fmtMoney = (n) => `${n.toLocaleString('ar-EG')} ج.م`;
 
-  const handleAssign = (locationId, workerId) => assignWorkersToLocation(locationId, [workerId]);
-  const handleUnassign = (workerId) => assignWorkersToLocation(null, [workerId]);
+  // بنـalert بأي خطأ بدل ما نسيبه يفشل بصمت - لو حصل مشكلة (زي إن سكريبت
+  // supabase-work-locations.sql لسه ما اتشغّلش) تشوفها على طول بدل ما
+  // تفضل مش فاهم ليه العامل ما اتضافش أو التكلفة ما ظهرتش.
+  const handleAssign = async (locationId, workerId) => {
+    try { await assignWorkersToLocation(locationId, [workerId]); }
+    catch (err) { alert('فشل تعيين العامل: ' + (err.message || 'خطأ غير متوقع') + '\n\nتأكد إنك شغّلت سكريبت supabase-work-locations.sql على قاعدة البيانات.'); }
+  };
+  const handleUnassign = async (workerId) => {
+    try { await assignWorkersToLocation(null, [workerId]); }
+    catch (err) { alert('فشل شيل العامل: ' + (err.message || 'خطأ غير متوقع')); }
+  };
 
   // إضافة منطقة (وأول مبنى فيها لو اتكتب) في نفس الخطوة - من غير ما نسيب الشاشة.
   const handleAddArea = async (e) => {
@@ -121,8 +129,6 @@ export default function WorkLocationsPage() {
     setRenaming(null);
   };
 
-  const unassignedWorkers = workers.filter(w => w.status === 'active' && !w.locationId);
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -158,7 +164,8 @@ export default function WorkLocationsPage() {
             <LocationWorkers locationId={area.id} workers={workers}
               onAdd={(wid) => handleAssign(area.id, wid)} onRemove={handleUnassign} />
 
-            <div className="grid grid-cols-2 gap-2 text-sm mt-3">
+            <p className="text-[11px] text-gray-300 mt-3 mb-1">من الحضور الفعلي، شامل النهاردة تلقائي</p>
+            <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="bg-blue-50 rounded p-2 text-center">
                 <p className="text-xs text-blue-600">أيام عمل محسوبة</p>
                 <p className="font-bold text-blue-800">{areaCost(area.id).days}</p>
@@ -224,25 +231,6 @@ export default function WorkLocationsPage() {
           <div className="col-span-full text-center py-10 text-gray-400">لا توجد أماكن عمل مسجلة. ابدأ بإضافة منطقة.</div>
         )}
       </div>
-
-      {unassignedWorkers.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-dashed border-gray-300 p-5">
-          <button onClick={() => setShowUnassigned(v => !v)} className="w-full flex items-center justify-between text-right">
-            <div>
-              <h3 className="font-bold text-gray-600">عمال بدون تحديد ({unassignedWorkers.length})</h3>
-              <p className="text-xs text-gray-400 mt-0.5">سواقين، مشرفين، وعمالة متحركة - طبيعي يفضلوا من غير مكان ثابت</p>
-            </div>
-            <svg className={`w-5 h-5 text-gray-400 transition-transform ${showUnassigned ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-          </button>
-          {showUnassigned && (
-            <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-gray-100">
-              {unassignedWorkers.map(w => (
-                <span key={w.id} className="bg-gray-50 text-gray-600 text-xs px-2 py-1 rounded-full">{w.name}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {showAddArea && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowAddArea(false)}>

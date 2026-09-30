@@ -16,8 +16,6 @@ export default function WorkersPage() {
   const [filterLoc, setFilterLoc] = useState('');
   const [showAssign, setShowAssign] = useState(false);
   const [assignTarget, setAssignTarget] = useState(LOC_NONE);
-  const [assignDateMode, setAssignDateMode] = useState('today'); // 'today' | 'later'
-  const [assignDate, setAssignDate] = useState(todayISO());
   const [assigning, setAssigning] = useState(false);
   const locOptions = locationOptions(workLocations);
   const [bulkText, setBulkText] = useState('');
@@ -29,7 +27,7 @@ export default function WorkersPage() {
   const [previewWorker, setPreviewWorker] = useState(null);
   const [qrImageUrl, setQrImageUrl] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [lastAssign, setLastAssign] = useState(null); // { count, label, prev: [{ids, locationId, pendingLocationId, pendingLocationDate}] } للتراجع
+  const [lastAssign, setLastAssign] = useState(null); // { count, label, prev: [{ids, locationId}] } للتراجع
   const emptyWorker = { name: '', role: NO_ROLE, dailyWage: '', status: 'active', phone: '', notes: '', walletNumber: '', walletName: '' };
   const [forms, setForms] = useState([{ ...emptyWorker }]);
   const fileRef = useRef();
@@ -335,26 +333,15 @@ export default function WorkersPage() {
     setAssigning(true);
     try {
       const ids = [...selectedIds];
-      // نحفظ المكان القديم (والنقل المجدول القديم لو موجود) لكل مجموعة عشان زر التراجع
+      // نحفظ المكان القديم لكل مجموعة عشان زر التراجع
       const groups = new Map();
       workers.filter(w => selectedIds.has(w.id)).forEach(w => {
-        const key = `${w.locationId || ''}|${w.pendingLocationId || ''}|${w.pendingLocationDate || ''}`;
-        if (!groups.has(key)) {
-          groups.set(key, {
-            ids: [],
-            locationId: w.locationId || null,
-            pendingLocationId: w.pendingLocationId || null,
-            pendingLocationDate: w.pendingLocationDate || null,
-          });
-        }
+        const key = w.locationId || '';
+        if (!groups.has(key)) groups.set(key, { ids: [], locationId: w.locationId || null });
         groups.get(key).ids.push(w.id);
       });
-      const effectiveDate = assignDateMode === 'later' ? assignDate : todayISO();
-      await assignWorkersToLocation(parseLocation(assignTarget), ids, effectiveDate);
-      const label = assignDateMode === 'later'
-        ? `${assignTargetLabel} (اعتبارًا من ${assignDate})`
-        : assignTargetLabel;
-      setLastAssign({ count: ids.length, label, prev: [...groups.values()] });
+      await assignWorkersToLocation(parseLocation(assignTarget), ids);
+      setLastAssign({ count: ids.length, label: assignTargetLabel, prev: [...groups.values()] });
       setShowAssign(false);
       setSelectedIds(new Set());
     } catch (err) {
