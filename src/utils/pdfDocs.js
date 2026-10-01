@@ -8,6 +8,17 @@ import {
   COMPANY_NAME, NAVY, esc, nAr, moneyAr, dateAr, dateArShort, letterheadHtml, openPrintWindow,
 } from './printDoc';
 
+// ختم وتوقيع اختياريين - نفس شكلهم بالظبط في إيصال المقاول، جاهزين لأي ورقة تانية تحب تضيفهم عليها.
+const SIGN_STAMP_CSS = `
+  table.sigs { width: 100%; border-collapse: collapse; margin-top: 10px; page-break-inside: avoid; }
+  table.sigs td { vertical-align: middle; padding: 0 7px; }
+  .sig-box { position: relative; height: 28mm; border: 1.5px solid ${NAVY}; border-radius: 9px; overflow: hidden; }
+  .sig-h { background: ${NAVY}; color: #fff; text-align: center; font-weight: 800; font-size: 12.5px; padding: 4px; }
+  .sig-img { display: block; margin: 4mm auto 0; height: 14mm; width: auto; }
+  .stamp { text-align: center; }
+  .stamp img { width: 28mm; height: 28mm; transform: rotate(-6deg); }
+`;
+
 export const ACCOUNTANT_NAME = 'روماني مكرم';
 
 const typeLabel = (type) => (PAYMENT_TYPES.find(p => p.value === type) || PAYMENT_TYPES[0]).label;
@@ -374,17 +385,47 @@ export function printAttendanceRollSheet({ workers, days, weekLabel }) {
 // 6) ورقة طباعة عامة (قسم "طباعة"): نفس شكل الشركة الثابت، بس الخانات
 //    والمسلسل وعدد الصفوف تحت تحكم المستخدم بالكامل. صفوف فاضية يملاها بخط اليد.
 // ============================================================================
-export function buildCustomSheetHtml({ title, columns, showSerial, rowCount }) {
+export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, showStamp, showSignature }) {
   const cols = (columns || []).filter(c => c.trim());
   const colCount = cols.length + (showSerial ? 1 : 0);
+
+  // خانة الاسم بتاخد عرض أوسع تلقائي - الأسماء عندنا بتبقى ثلاثية وأطول من
+  // أي عمود تاني (توقيع، تاريخ، ...)، فمينفعش كل الخانات بنفس العرض.
+  const serialW = showSerial ? 6 : 0;
+  const nameIdx = cols.map(c => /اسم/.test(c));
+  const nameCount = nameIdx.filter(Boolean).length;
+  const remaining = 100 - serialW;
+  const nameW = nameCount > 0 ? Math.min(34, Math.round((remaining * 0.4) / nameCount)) : 0;
+  const otherCount = cols.length - nameCount;
+  const otherW = otherCount > 0 ? (remaining - nameW * nameCount) / otherCount : 0;
+
   const headers = `
-    ${showSerial ? '<th style="width:6%">م</th>' : ''}
-    ${cols.map(c => `<th>${esc(c)}</th>`).join('')}`;
+    ${showSerial ? `<th style="width:${serialW}%">م</th>` : ''}
+    ${cols.map((c, i) => `<th style="width:${(nameIdx[i] ? nameW : otherW).toFixed(1)}%">${esc(c)}</th>`).join('')}`;
   const rows = Array.from({ length: Math.max(0, rowCount || 0) }).map((_, i) => `
     <tr>
       ${showSerial ? `<td class="num">${nAr(i + 1)}</td>` : ''}
       ${cols.map(() => '<td class="day-cell"></td>').join('')}
     </tr>`).join('');
+
+  // الختم والتوقيع اختياريين تمامًا - بيظهروا بس لو المستخدم فعّلهم، وبنفس
+  // شكلهم في باقي أوراق النظام (الإيصالات).
+  const sigCells = [];
+  if (showSignature) {
+    sigCells.push(`
+      <td style="width:${showStamp ? '50%' : '100%'}">
+        <div class="sig-box">
+          <div class="sig-h">التوقيع</div>
+          <img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" />
+        </div>
+      </td>`);
+  }
+  if (showStamp) {
+    sigCells.push(`<td class="stamp" style="width:${showSignature ? '50%' : '100%'}"><img src="${PDF_STAMP_DATA_URI}" alt="ختم الشركة" /></td>`);
+  }
+  const sigHtml = sigCells.length
+    ? `<table class="sigs"><tr>${sigCells.join('')}</tr></table>`
+    : '';
 
   return `
     ${letterheadHtml(title || '')}
@@ -392,14 +433,54 @@ export function buildCustomSheetHtml({ title, columns, showSerial, rowCount }) {
       <thead><tr>${headers}</tr></thead>
       <tbody>${rows || `<tr><td colspan="${colCount || 1}" class="muted">لا توجد خانات</td></tr>`}</tbody>
     </table>
+    ${sigHtml}
     <div class="doc-foot">${COMPANY_NAME} — تاريخ الطباعة: ${dateAr(todayISO())}</div>`;
 }
 
-export function printCustomSheet({ title, columns, showSerial, rowCount }) {
+export function printCustomSheet({ title, columns, showSerial, rowCount, showStamp, showSignature }) {
   return openPrintWindow({
     title: title || 'ورقة-طباعة',
-    body: buildCustomSheetHtml({ title, columns, showSerial, rowCount }),
-    css: ROLL_CSS,
+    body: buildCustomSheetHtml({ title, columns, showSerial, rowCount, showStamp, showSignature }),
+    css: ROLL_CSS + SIGN_STAMP_CSS,
+  });
+}
+
+// ============================================================================
+// 7) مذكرة نصية (قسم "طباعة" / تبويب "مذكرات"): نفس شكل الشركة الثابت،
+//    بس بدل جدول فاضي بتكتب كلام حر وتحفظه وتطبعه وقت ما تحب.
+// ============================================================================
+const MEMO_CSS = `
+  .memo-body { font-size: 13.5px; line-height: 2; color: #1e293b; white-space: pre-wrap; min-height: 60mm; padding: 4px 2px; }
+`;
+
+export function buildMemoHtml({ title, content, showStamp, showSignature }) {
+  const sigCells = [];
+  if (showSignature) {
+    sigCells.push(`
+      <td style="width:${showStamp ? '50%' : '100%'}">
+        <div class="sig-box">
+          <div class="sig-h">التوقيع</div>
+          <img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" />
+        </div>
+      </td>`);
+  }
+  if (showStamp) {
+    sigCells.push(`<td class="stamp" style="width:${showSignature ? '50%' : '100%'}"><img src="${PDF_STAMP_DATA_URI}" alt="ختم الشركة" /></td>`);
+  }
+  const sigHtml = sigCells.length ? `<table class="sigs"><tr>${sigCells.join('')}</tr></table>` : '';
+
+  return `
+    ${letterheadHtml(title || 'مذكرة')}
+    <div class="memo-body">${esc(content || '')}</div>
+    ${sigHtml}
+    <div class="doc-foot">${COMPANY_NAME} — تاريخ الطباعة: ${dateAr(todayISO())}</div>`;
+}
+
+export function printMemo({ title, content, showStamp, showSignature }) {
+  return openPrintWindow({
+    title: title || 'مذكرة',
+    body: buildMemoHtml({ title, content, showStamp, showSignature }),
+    css: MEMO_CSS + SIGN_STAMP_CSS,
   });
 }
 
