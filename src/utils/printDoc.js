@@ -67,8 +67,8 @@ export const BASE_CSS = `
   .lh-side { width: 24%; font-size: 10.5px; color: #475569; line-height: 1.7; text-align: right; }
   .lh-center { text-align: center; }
   .lh-name { font-size: 19px; font-weight: 800; color: ${NAVY}; }
-  .lh-title { display: inline-block; margin-top: 5px; background: ${NAVY}; color: #fff; font-weight: 700;
-              font-size: 13px; padding: 3px 20px; border-radius: 8px; }
+  .lh-title { display: inline-block; margin-top: 6px; background: ${NAVY}; color: #fff; font-weight: 800;
+              font-size: 15px; padding: 5px 28px; border-radius: 9px; letter-spacing: 0.3px; }
   .lh-logo { width: 24%; text-align: left; }
   .lh-logo img { height: 64px; }
 

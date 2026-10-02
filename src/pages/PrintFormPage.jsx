@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { printCustomSheet, printMemo } from '../utils/pdfDocs';
+import { printCustomSheet, printMemo, printPresetReceipt } from '../utils/pdfDocs';
 import { useApp } from '../context/AppContext';
 
 const STORAGE_KEY = 'printSheetTemplate';
@@ -20,7 +20,7 @@ function BlankSheetTab() {
   const [columns, setColumns] = useState(saved?.columns?.length ? saved.columns : ['الاسم', 'التوقيع']);
   const [showSerial, setShowSerial] = useState(saved?.showSerial ?? true);
   const [rowCount, setRowCount] = useState(saved?.rowCount ?? 25);
-  const [showStamp, setShowStamp] = useState(false);
+  const [stampType, setStampType] = useState('none');
   const [showSignature, setShowSignature] = useState(false);
 
   // بيحفظ الشكل (العنوان والخانات وإظهار المسلسل) تلقائي في المتصفح، عشان
@@ -45,7 +45,7 @@ function BlankSheetTab() {
 
   const handlePrint = () => {
     if (validColumns.length === 0) { alert('لازم تضيف خانة واحدة على الأقل قبل الطباعة.'); return; }
-    printCustomSheet({ title, columns: validColumns, showSerial, rowCount: Number(rowCount) || 0, showStamp, showSignature });
+    printCustomSheet({ title, columns: validColumns, showSerial, rowCount: Number(rowCount) || 0, stampType, showSignature });
   };
 
   return (
@@ -91,7 +91,7 @@ function BlankSheetTab() {
           className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-right" />
       </div>
 
-      <SignStampToggles showStamp={showStamp} setShowStamp={setShowStamp} showSignature={showSignature} setShowSignature={setShowSignature} />
+      <SignStampControls stampType={stampType} setStampType={setStampType} showSignature={showSignature} setShowSignature={setShowSignature} />
 
       <div className="pt-2 border-t border-gray-100 flex justify-end">
         <PrintButton onClick={handlePrint} />
@@ -100,15 +100,28 @@ function BlankSheetTab() {
   );
 }
 
-function SignStampToggles({ showStamp, setShowStamp, showSignature, setShowSignature }) {
+// محدد الختم (بدون / ختم المحاسب / ختم الشركة) والتوقيع - اختياريين تمامًا،
+// وبتختارهم كل مرة تطبع فيها، مش بيتحفظوا زي باقي شكل الورقة.
+function SignStampControls({ stampType, setStampType, showSignature, setShowSignature }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-2">الختم والتوقيع (اختياري)</label>
-      <div className="flex gap-5">
-        <label className="flex items-center gap-1.5 text-sm text-gray-600">
-          <input type="checkbox" checked={showStamp} onChange={e => setShowStamp(e.target.checked)} />
-          إضافة ختم الشركة
-        </label>
+      <div className="flex flex-wrap gap-4 items-center">
+        <div className="flex gap-3">
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            <input type="radio" name="stampType" checked={stampType === 'none'} onChange={() => setStampType('none')} />
+            بدون ختم
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            <input type="radio" name="stampType" checked={stampType === 'accountant'} onChange={() => setStampType('accountant')} />
+            ختم المحاسب
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            <input type="radio" name="stampType" checked={stampType === 'company'} onChange={() => setStampType('company')} />
+            ختم الشركة
+          </label>
+        </div>
+        <span className="text-gray-300">|</span>
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
           <input type="checkbox" checked={showSignature} onChange={e => setShowSignature(e.target.checked)} />
           إضافة التوقيع
@@ -135,7 +148,7 @@ function MemosTab() {
   const { printMemos, addPrintMemo, updatePrintMemo, deletePrintMemo } = useApp();
   const [activeId, setActiveId] = useState(null);
   const [draft, setDraft] = useState({ title: '', content: '' });
-  const [showStamp, setShowStamp] = useState(false);
+  const [stampType, setStampType] = useState('none');
   const [showSignature, setShowSignature] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -169,7 +182,7 @@ function MemosTab() {
 
   const handlePrint = () => {
     if (!draft.content.trim() && !draft.title.trim()) { alert('المذكرة فاضية.'); return; }
-    printMemo({ title: draft.title, content: draft.content, showStamp, showSignature });
+    printMemo({ title: draft.title, content: draft.content, stampType, showSignature });
   };
 
   return (
@@ -201,7 +214,7 @@ function MemosTab() {
             <textarea value={draft.content} onChange={e => setDraft(d => ({ ...d, content: e.target.value }))}
               placeholder="اكتب المذكرة هنا..." rows={12}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-right leading-loose resize-y" />
-            <SignStampToggles showStamp={showStamp} setShowStamp={setShowStamp} showSignature={showSignature} setShowSignature={setShowSignature} />
+            <SignStampControls stampType={stampType} setStampType={setStampType} showSignature={showSignature} setShowSignature={setShowSignature} />
             <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
               <button onClick={handleSave} disabled={saving}
                 className="px-5 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-medium disabled:opacity-50">
@@ -218,8 +231,39 @@ function MemosTab() {
   );
 }
 
+// تبويب "قوالب جاهزة": نفس تصميم الإيصالات اللي بعتها (نقدية / صرف مقاول /
+// استلام عهدة) - فاضية تطبعها وتملاها باليد، مش مربوطة ببيانات حقيقية.
+const PRESETS = [
+  { type: 'cash', label: 'إيصال نقدية', color: '#003670' },
+  { type: 'contractor', label: 'صرف نقدية مقاول', color: '#15803d' },
+  { type: 'custody', label: 'إيصال استلام عهدة', color: '#b91c1c' },
+];
+
+function PresetsTab() {
+  const [stampType, setStampType] = useState('none');
+  const [showSignature, setShowSignature] = useState(false);
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-5">
+      <SignStampControls stampType={stampType} setStampType={setStampType} showSignature={showSignature} setShowSignature={setShowSignature} />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
+        {PRESETS.map(p => (
+          <div key={p.type} className="border-2 rounded-xl p-4 text-center space-y-3" style={{ borderColor: p.color }}>
+            <div className="text-white font-bold py-2 rounded-lg" style={{ background: p.color }}>{p.label}</div>
+            <button onClick={() => printPresetReceipt({ type: p.type, stampType, showSignature })}
+              className="w-full py-2 rounded-lg border font-medium text-sm transition hover:bg-gray-50"
+              style={{ borderColor: p.color, color: p.color }}>
+              طباعة
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PrintFormPage() {
-  const [tab, setTab] = useState('sheet'); // sheet | memos
+  const [tab, setTab] = useState('sheet'); // sheet | memos | presets
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -237,9 +281,15 @@ export default function PrintFormPage() {
           className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'memos' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
           مذكرات
         </button>
+        <button onClick={() => setTab('presets')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'presets' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+          قوالب جاهزة
+        </button>
       </div>
 
-      {tab === 'sheet' ? <BlankSheetTab /> : <MemosTab />}
+      {tab === 'sheet' && <BlankSheetTab />}
+      {tab === 'memos' && <MemosTab />}
+      {tab === 'presets' && <PresetsTab />}
 
       <p className="text-xs text-gray-400">
         الشكل (اسم الشركة، اللوجو، تصميم الجدول) ثابت ومتطابق مع باقي أوراق الطباعة في النظام.

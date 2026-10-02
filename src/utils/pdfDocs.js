@@ -1,7 +1,8 @@
 // بناة ملفات الـ PDF. كل دالة بتجهّز HTML وتفتح نافذة الطباعة (openPrintWindow).
 // الدوال دي بترجّع HTML بس في نسخ build*Html عشان تتجرّب من غير متصفح.
 import { PAYMENT_TYPES, todayISO } from './constants';
-import { PDF_STAMP_DATA_URI } from '../assets/pdfStamp';
+import { PDF_STAMP_DATA_URI } from '../assets/pdfStamp'; // ختم المحاسب (روماني مكرم)
+import { COMPANY_STAMP_DATA_URI } from '../assets/companyStamp'; // ختم الشركة الرسمي (إدارة: رضا سمير فرج)
 import { MANAGER_SIGNATURE_DATA_URI } from '../assets/managerSignature';
 import { amountInArabicWords } from './arabicWords';
 import {
@@ -18,6 +19,32 @@ const SIGN_STAMP_CSS = `
   .stamp { text-align: center; }
   .stamp img { width: 28mm; height: 28mm; transform: rotate(-6deg); }
 `;
+
+// stampType: 'none' | 'accountant' (ختم المحاسب) | 'company' (ختم الشركة الرسمي)
+function stampInfo(stampType) {
+  if (stampType === 'company') return { uri: COMPANY_STAMP_DATA_URI, alt: 'ختم الشركة' };
+  if (stampType === 'accountant') return { uri: PDF_STAMP_DATA_URI, alt: 'ختم المحاسب' };
+  return null;
+}
+
+// بناء صف "التوقيع / الختم" الاختياري - بيستخدمه أي ورقة طباعة في النظام.
+function signStampHtml(stampType, showSignature) {
+  const stamp = stampInfo(stampType);
+  const cells = [];
+  if (showSignature) {
+    cells.push(`
+      <td style="width:${stamp ? '50%' : '100%'}">
+        <div class="sig-box">
+          <div class="sig-h">التوقيع</div>
+          <img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" />
+        </div>
+      </td>`);
+  }
+  if (stamp) {
+    cells.push(`<td class="stamp" style="width:${showSignature ? '50%' : '100%'}"><img src="${stamp.uri}" alt="${stamp.alt}" /></td>`);
+  }
+  return cells.length ? `<table class="sigs"><tr>${cells.join('')}</tr></table>` : '';
+}
 
 export const ACCOUNTANT_NAME = 'روماني مكرم';
 
@@ -385,7 +412,7 @@ export function printAttendanceRollSheet({ workers, days, weekLabel }) {
 // 6) ورقة طباعة عامة (قسم "طباعة"): نفس شكل الشركة الثابت، بس الخانات
 //    والمسلسل وعدد الصفوف تحت تحكم المستخدم بالكامل. صفوف فاضية يملاها بخط اليد.
 // ============================================================================
-export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, showStamp, showSignature }) {
+export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, stampType, showSignature }) {
   const cols = (columns || []).filter(c => c.trim());
   const colCount = cols.length + (showSerial ? 1 : 0);
 
@@ -408,39 +435,20 @@ export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, sho
       ${cols.map(() => '<td class="day-cell"></td>').join('')}
     </tr>`).join('');
 
-  // الختم والتوقيع اختياريين تمامًا - بيظهروا بس لو المستخدم فعّلهم، وبنفس
-  // شكلهم في باقي أوراق النظام (الإيصالات).
-  const sigCells = [];
-  if (showSignature) {
-    sigCells.push(`
-      <td style="width:${showStamp ? '50%' : '100%'}">
-        <div class="sig-box">
-          <div class="sig-h">التوقيع</div>
-          <img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" />
-        </div>
-      </td>`);
-  }
-  if (showStamp) {
-    sigCells.push(`<td class="stamp" style="width:${showSignature ? '50%' : '100%'}"><img src="${PDF_STAMP_DATA_URI}" alt="ختم الشركة" /></td>`);
-  }
-  const sigHtml = sigCells.length
-    ? `<table class="sigs"><tr>${sigCells.join('')}</tr></table>`
-    : '';
-
   return `
     ${letterheadHtml(title || '')}
     <table class="t roll">
       <thead><tr>${headers}</tr></thead>
       <tbody>${rows || `<tr><td colspan="${colCount || 1}" class="muted">لا توجد خانات</td></tr>`}</tbody>
     </table>
-    ${sigHtml}
+    ${signStampHtml(stampType, showSignature)}
     <div class="doc-foot">${COMPANY_NAME} — تاريخ الطباعة: ${dateAr(todayISO())}</div>`;
 }
 
-export function printCustomSheet({ title, columns, showSerial, rowCount, showStamp, showSignature }) {
+export function printCustomSheet({ title, columns, showSerial, rowCount, stampType, showSignature }) {
   return openPrintWindow({
     title: title || 'ورقة-طباعة',
-    body: buildCustomSheetHtml({ title, columns, showSerial, rowCount, showStamp, showSignature }),
+    body: buildCustomSheetHtml({ title, columns, showSerial, rowCount, stampType, showSignature }),
     css: ROLL_CSS + SIGN_STAMP_CSS,
   });
 }
@@ -453,34 +461,95 @@ const MEMO_CSS = `
   .memo-body { font-size: 13.5px; line-height: 2; color: #1e293b; white-space: pre-wrap; min-height: 60mm; padding: 4px 2px; }
 `;
 
-export function buildMemoHtml({ title, content, showStamp, showSignature }) {
-  const sigCells = [];
-  if (showSignature) {
-    sigCells.push(`
-      <td style="width:${showStamp ? '50%' : '100%'}">
-        <div class="sig-box">
-          <div class="sig-h">التوقيع</div>
-          <img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" />
-        </div>
-      </td>`);
-  }
-  if (showStamp) {
-    sigCells.push(`<td class="stamp" style="width:${showSignature ? '50%' : '100%'}"><img src="${PDF_STAMP_DATA_URI}" alt="ختم الشركة" /></td>`);
-  }
-  const sigHtml = sigCells.length ? `<table class="sigs"><tr>${sigCells.join('')}</tr></table>` : '';
-
+export function buildMemoHtml({ title, content, stampType, showSignature }) {
   return `
     ${letterheadHtml(title || 'مذكرة')}
     <div class="memo-body">${esc(content || '')}</div>
-    ${sigHtml}
+    ${signStampHtml(stampType, showSignature)}
     <div class="doc-foot">${COMPANY_NAME} — تاريخ الطباعة: ${dateAr(todayISO())}</div>`;
 }
 
-export function printMemo({ title, content, showStamp, showSignature }) {
+export function printMemo({ title, content, stampType, showSignature }) {
   return openPrintWindow({
     title: title || 'مذكرة',
-    body: buildMemoHtml({ title, content, showStamp, showSignature }),
+    body: buildMemoHtml({ title, content, stampType, showSignature }),
     css: MEMO_CSS + SIGN_STAMP_CSS,
+  });
+}
+
+// ============================================================================
+// 8) قوالب جاهزة (قسم "طباعة" / تبويب "قوالب جاهزة"): نفس تصميم الإيصالات
+//    اللي بعتها، فاضية للملء باليد وتوقيعها - مش مربوطة ببيانات مقاول حقيقية.
+// ============================================================================
+const PRESET_CSS = `
+  .pr { border: 2px solid var(--pc); border-radius: 12px; padding: 10px 14px 12px; }
+  .pr table.lh { margin-bottom: 6px; border-bottom: 1.5px solid var(--pc); }
+  .pr .lh-name { color: var(--pc); }
+  .pr-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--pc); }
+  .pr-top .line { display: inline-block; min-width: 40mm; border-bottom: 1.5px solid #64748b; height: 15px; vertical-align: bottom; }
+  .pr-title { background: var(--pc); color: #fff; text-align: center; border-radius: 10px; padding: 6px 30px; font-size: 18px; font-weight: 800; margin: 0 auto 10px; display: table; }
+  .pr-fields { border: 1.5px solid var(--pc); border-radius: 10px; overflow: hidden; }
+  .pr-field { display: flex; align-items: center; border-bottom: 1px solid #d8e3f3; background: #fbfdff; }
+  .pr-field:last-child { border-bottom: none; }
+  .pr-field-label { width: 32%; background: #eef3fa; color: var(--pc); font-weight: 800; font-size: 13px; padding: 9px 12px; text-align: center; border-left: 1.5px solid var(--pc); }
+  .pr-field-blank { flex: 1; min-height: 34px; }
+  .pr-sigs { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+  .pr-sig-box { flex: 1; border: 1.5px solid var(--pc); border-radius: 9px; overflow: hidden; height: 24mm; position: relative; }
+  .pr-sig-h { background: var(--pc); color: #fff; text-align: center; font-weight: 800; font-size: 12px; padding: 4px; }
+`;
+
+const PRESET_TYPES = {
+  cash: {
+    color: '#003670',
+    title: 'إيصال نقدية',
+    fields: ['الاسم', 'المبلغ', 'نوع الصرف', 'الغرض'],
+  },
+  contractor: {
+    color: '#15803d',
+    title: 'صرف نقدية مقاول',
+    fields: ['الاسم', 'المبلغ', 'نوع الصرف', 'نوع المقاولة'],
+  },
+  custody: {
+    color: '#b91c1c',
+    title: 'إيصال استلام عهدة',
+    fields: ['الاسم', 'نوع العهدة', 'المكان', 'الفورمان'],
+  },
+};
+
+export function buildPresetReceiptHtml({ type, stampType, showSignature }) {
+  const preset = PRESET_TYPES[type] || PRESET_TYPES.cash;
+  const fieldsHtml = preset.fields.map(f => `
+    <div class="pr-field">
+      <div class="pr-field-label">${esc(f)} :</div>
+      <div class="pr-field-blank"></div>
+    </div>`).join('');
+
+  return `
+    <div class="pr" style="--pc:${preset.color}">
+      ${letterheadHtml('')}
+      <div class="pr-top">
+        <span>رقم الإيصال: <span class="line"></span></span>
+        <span>التاريخ: <span class="line"></span></span>
+      </div>
+      <div class="pr-title">${esc(preset.title)}</div>
+      <div class="pr-fields">${fieldsHtml}</div>
+      <div class="pr-sigs">
+        <div class="pr-sig-box"><div class="pr-sig-h">توقيع المستلم</div></div>
+        ${stampInfo(stampType) ? `<div class="pr-sig-box" style="flex:0 0 26mm; text-align:center; border:none;"><img src="${stampInfo(stampType).uri}" alt="${stampInfo(stampType).alt}" style="width:24mm;height:24mm;margin-top:3mm;" /></div>` : ''}
+        <div class="pr-sig-box">
+          <div class="pr-sig-h">توقيع المسؤول</div>
+          ${showSignature ? `<img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" style="margin-top:2mm;height:12mm;" />` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+export function printPresetReceipt({ type, stampType, showSignature }) {
+  const preset = PRESET_TYPES[type] || PRESET_TYPES.cash;
+  return openPrintWindow({
+    title: preset.title,
+    body: buildPresetReceiptHtml({ type, stampType, showSignature }),
+    css: PRESET_CSS + SIGN_STAMP_CSS,
   });
 }
 
