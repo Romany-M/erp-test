@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { printCustomSheet, printMemo, printPresetReceipt } from '../utils/pdfDocs';
+import { printCustomSheet, printMemo, printPresetReceipt, PRESET_TYPES } from '../utils/pdfDocs';
 import { useApp } from '../context/AppContext';
+import { todayISO } from '../utils/constants';
 
 const STORAGE_KEY = 'printSheetTemplate';
 
@@ -235,7 +236,8 @@ function MemosTab() {
 }
 
 // تبويب "قوالب جاهزة": نفس تصميم الإيصالات اللي بعتها (نقدية / صرف مقاول /
-// استلام عهدة) - فاضية تطبعها وتملاها باليد، مش مربوطة ببيانات حقيقية.
+// استلام عهدة). تقدر تملا البيانات من هنا فتطبع جاهزة، أو تسيب أي خانة
+// فاضية تملاها بالخط بعدين - الاختيار ليك.
 const PRESETS = [
   { type: 'cash', label: 'إيصال نقدية', color: '#003670' },
   { type: 'contractor', label: 'صرف نقدية مقاول', color: '#15803d' },
@@ -243,27 +245,66 @@ const PRESETS = [
 ];
 
 function PresetsTab() {
+  const [selected, setSelected] = useState('cash');
+  const [receiptNo, setReceiptNo] = useState('');
+  const [date, setDate] = useState(todayISO());
+  const [values, setValues] = useState({});
   const [showAccountantStamp, setShowAccountantStamp] = useState(false);
   const [showCompanyStamp, setShowCompanyStamp] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
 
+  const preset = PRESETS.find(p => p.type === selected);
+  const fields = PRESET_TYPES[selected]?.fields || [];
+
+  const selectPreset = (type) => { setSelected(type); setValues({}); };
+  const setField = (f, v) => setValues(prev => ({ ...prev, [f]: v }));
+
+  const handlePrint = () => {
+    printPresetReceipt({ type: selected, values, receiptNo, date, showAccountantStamp, showCompanyStamp, showSignature });
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {PRESETS.map(p => (
+          <button key={p.type} onClick={() => selectPreset(p.type)}
+            className="font-bold py-2.5 rounded-lg text-sm transition text-white"
+            style={{ background: p.color, opacity: selected === p.type ? 1 : 0.45 }}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3 pt-3 border-t border-gray-100">
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">رقم الإيصال (اختياري)</label>
+            <input type="text" value={receiptNo} onChange={e => setReceiptNo(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 text-right" />
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">التاريخ</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+          </div>
+        </div>
+        {fields.map(f => (
+          <div key={f}>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{f}</label>
+            <input type="text" value={values[f] || ''} onChange={e => setField(f, e.target.value)}
+              placeholder={`سيبها فاضية تملاها بالخط لو حبيت`}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 text-right" />
+          </div>
+        ))}
+      </div>
+
       <SignStampControls
         showAccountantStamp={showAccountantStamp} setShowAccountantStamp={setShowAccountantStamp}
         showCompanyStamp={showCompanyStamp} setShowCompanyStamp={setShowCompanyStamp}
         showSignature={showSignature} setShowSignature={setShowSignature} />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
-        {PRESETS.map(p => (
-          <div key={p.type} className="border-2 rounded-xl p-4 text-center space-y-3" style={{ borderColor: p.color }}>
-            <div className="text-white font-bold py-2 rounded-lg" style={{ background: p.color }}>{p.label}</div>
-            <button onClick={() => printPresetReceipt({ type: p.type, showAccountantStamp, showCompanyStamp, showSignature })}
-              className="w-full py-2 rounded-lg border font-medium text-sm transition hover:bg-gray-50"
-              style={{ borderColor: p.color, color: p.color }}>
-              طباعة
-            </button>
-          </div>
-        ))}
+
+      <div className="pt-2 border-t border-gray-100 flex justify-end">
+        <PrintButton onClick={handlePrint} />
       </div>
     </div>
   );

@@ -19,9 +19,12 @@ function AlertsSection() {
     });
   }, [workers, attendance, advances, transfers, pillars, payments, today]);
 
+  // لو العامل اشتغل أيام كفت السلفة اللي عليه، صافيه بقى صفر أو موجب -
+  // يبقى السلفة "اتغطت" من شغله، فمش منطقي تفضل التنبيهات دي ثابتة عليه.
+  // نفس شرط "صافي بالسالب" بالظبط، بس مع اشتراط إن عنده سلفة أصلًا.
   const negativeNet = rows.filter(r => r.net < 0).sort((a, b) => a.net - b.net);
-  const advanceAndAbsent = rows.filter(r => r.advances > 0 && r.absentToday);
-  const withAdvances = rows.filter(r => r.advances > 0).sort((a, b) => b.advances - a.advances);
+  const advanceAndAbsent = rows.filter(r => r.advances > 0 && r.net < 0 && r.absentToday);
+  const withAdvances = rows.filter(r => r.advances > 0 && r.net < 0).sort((a, b) => a.net - b.net);
 
   const Card = ({ title, color, items, render, empty }) => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
@@ -56,7 +59,7 @@ function AlertsSection() {
           </div>
         )} />
       <Card
-        title="عليهم سلفة قائمة" color="#1d4ed8" items={withAdvances} empty="مفيش سلف قائمة دلوقتي"
+        title="سلفة لسه مش مغطاة" color="#1d4ed8" items={withAdvances} empty="مفيش سلف لسه عليها مستحق"
         render={r => (
           <div key={r.worker.id} className="flex justify-between items-center text-sm px-2 py-1.5 rounded-lg bg-blue-50">
             <span className="text-gray-700">{r.worker.name}</span>

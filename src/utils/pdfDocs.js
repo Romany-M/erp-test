@@ -492,13 +492,13 @@ const PRESET_CSS = `
   .pr-field { display: flex; align-items: center; border-bottom: 1px solid #d8e3f3; background: #fbfdff; }
   .pr-field:last-child { border-bottom: none; }
   .pr-field-label { width: 32%; background: #eef3fa; color: var(--pc); font-weight: 800; font-size: 13px; padding: 9px 12px; text-align: center; border-left: 1.5px solid var(--pc); }
-  .pr-field-blank { flex: 1; min-height: 34px; }
+  .pr-field-blank { flex: 1; min-height: 34px; display: flex; align-items: center; padding: 0 12px; font-size: 13.5px; color: #1e293b; font-weight: 600; }
   .pr-sigs { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
   .pr-sig-box { flex: 1; border: 1.5px solid var(--pc); border-radius: 9px; overflow: hidden; height: 24mm; position: relative; }
   .pr-sig-h { background: var(--pc); color: #fff; text-align: center; font-weight: 800; font-size: 12px; padding: 4px; }
 `;
 
-const PRESET_TYPES = {
+export const PRESET_TYPES = {
   cash: {
     color: '#003670',
     title: 'إيصال نقدية',
@@ -516,12 +516,15 @@ const PRESET_TYPES = {
   },
 };
 
-export function buildPresetReceiptHtml({ type, showAccountantStamp, showCompanyStamp, showSignature }) {
+// values: { [اسم الخانة]: 'القيمة' } - أي خانة تسيبها فاضية تطبع كخط فاضي
+// تملاه بالخط بعدين، مش لازم تملا كل حاجة من الشاشة.
+export function buildPresetReceiptHtml({ type, values, receiptNo, date, showAccountantStamp, showCompanyStamp, showSignature }) {
   const preset = PRESET_TYPES[type] || PRESET_TYPES.cash;
+  const vals = values || {};
   const fieldsHtml = preset.fields.map(f => `
     <div class="pr-field">
       <div class="pr-field-label">${esc(f)} :</div>
-      <div class="pr-field-blank"></div>
+      <div class="pr-field-blank">${esc(vals[f] || '')}</div>
     </div>`).join('');
 
   // صف "توقيع المستلم" ثابت زي التصميم الأصلي، وتحته صف الختم/التوقيع
@@ -530,8 +533,8 @@ export function buildPresetReceiptHtml({ type, showAccountantStamp, showCompanyS
     <div class="pr" style="--pc:${preset.color}">
       ${letterheadHtml('')}
       <div class="pr-top">
-        <span>رقم الإيصال: <span class="line"></span></span>
-        <span>التاريخ: <span class="line"></span></span>
+        <span>رقم الإيصال: ${receiptNo ? `<strong>${esc(receiptNo)}</strong>` : '<span class="line"></span>'}</span>
+        <span>التاريخ: ${date ? `<strong>${dateAr(date)}</strong>` : '<span class="line"></span>'}</span>
       </div>
       <div class="pr-title">${esc(preset.title)}</div>
       <div class="pr-fields">${fieldsHtml}</div>
@@ -542,11 +545,11 @@ export function buildPresetReceiptHtml({ type, showAccountantStamp, showCompanyS
     </div>`;
 }
 
-export function printPresetReceipt({ type, showAccountantStamp, showCompanyStamp, showSignature }) {
+export function printPresetReceipt({ type, values, receiptNo, date, showAccountantStamp, showCompanyStamp, showSignature }) {
   const preset = PRESET_TYPES[type] || PRESET_TYPES.cash;
   return openPrintWindow({
     title: preset.title,
-    body: buildPresetReceiptHtml({ type, showAccountantStamp, showCompanyStamp, showSignature }),
+    body: buildPresetReceiptHtml({ type, values, receiptNo, date, showAccountantStamp, showCompanyStamp, showSignature }),
     css: PRESET_CSS + SIGN_STAMP_CSS,
   });
 }
