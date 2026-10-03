@@ -418,7 +418,7 @@ export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, sho
 
   // خانة الاسم بتاخد عرض أوسع تلقائي - الأسماء عندنا بتبقى ثلاثية وأطول من
   // أي عمود تاني (توقيع، تاريخ، ...)، فمينفعش كل الخانات بنفس العرض.
-  const serialW = showSerial ? 6 : 0;
+  const serialW = showSerial ? 4 : 0;
   const nameIdx = cols.map(c => /اسم/.test(c));
   const nameCount = nameIdx.filter(Boolean).length;
   const remaining = 100 - serialW;
