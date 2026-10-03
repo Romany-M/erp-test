@@ -418,7 +418,10 @@ export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, sho
 
   // خانة الاسم بتاخد عرض أوسع تلقائي - الأسماء عندنا بتبقى ثلاثية وأطول من
   // أي عمود تاني (توقيع، تاريخ، ...)، فمينفعش كل الخانات بنفس العرض.
-  const serialW = showSerial ? 4 : 0;
+  // عرض عمود "م" بيتغيّر حسب عدد خانات أكبر رقم فيه - زي الوورد بالظبط:
+  // ١-٩ أضيق من ١٠-٩٩، وده أضيق من ١٠٠ فأكتر.
+  const serialDigits = String(Math.max(1, rowCount || 1)).length;
+  const serialW = showSerial ? Math.min(8, 2.5 + (serialDigits - 1) * 1.5) : 0;
   const nameIdx = cols.map(c => /اسم/.test(c));
   const nameCount = nameIdx.filter(Boolean).length;
   const remaining = 100 - serialW;
