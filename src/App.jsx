@@ -14,6 +14,7 @@ import TransfersPage from './pages/TransfersPage';
 import ExternalTransfersPage from './pages/ExternalTransfersPage';
 import WorkLocationsPage from './pages/WorkLocationsPage';
 import PrintFormPage from './pages/PrintFormPage';
+import RemindersPage from './pages/RemindersPage';
 import BudgetPage from './pages/BudgetPage';
 import PayrollPage from './pages/PayrollPage';
 import ReportsPage from './pages/ReportsPage';
@@ -80,6 +81,7 @@ function AppRoutes() {
         <Route path="workers" element={<WorkersPage />} />
         <Route path="work-locations" element={<WorkLocationsPage />} />
         <Route path="print" element={<PrintFormPage />} />
+        <Route path="reminders" element={<RemindersPage />} />
         <Route path="attendance" element={<AttendancePage />} />
         <Route path="advances" element={<AdvancesPage />} />
         <Route path="custody" element={<CustodyPage />} />

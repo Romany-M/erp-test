@@ -20,7 +20,8 @@ function BlankSheetTab() {
   const [columns, setColumns] = useState(saved?.columns?.length ? saved.columns : ['الاسم', 'التوقيع']);
   const [showSerial, setShowSerial] = useState(saved?.showSerial ?? true);
   const [rowCount, setRowCount] = useState(saved?.rowCount ?? 25);
-  const [stampType, setStampType] = useState('none');
+  const [showAccountantStamp, setShowAccountantStamp] = useState(false);
+  const [showCompanyStamp, setShowCompanyStamp] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
 
   // بيحفظ الشكل (العنوان والخانات وإظهار المسلسل) تلقائي في المتصفح، عشان
@@ -45,7 +46,7 @@ function BlankSheetTab() {
 
   const handlePrint = () => {
     if (validColumns.length === 0) { alert('لازم تضيف خانة واحدة على الأقل قبل الطباعة.'); return; }
-    printCustomSheet({ title, columns: validColumns, showSerial, rowCount: Number(rowCount) || 0, stampType, showSignature });
+    printCustomSheet({ title, columns: validColumns, showSerial, rowCount: Number(rowCount) || 0, showAccountantStamp, showCompanyStamp, showSignature });
   };
 
   return (
@@ -91,7 +92,10 @@ function BlankSheetTab() {
           className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-right" />
       </div>
 
-      <SignStampControls stampType={stampType} setStampType={setStampType} showSignature={showSignature} setShowSignature={setShowSignature} />
+      <SignStampControls
+        showAccountantStamp={showAccountantStamp} setShowAccountantStamp={setShowAccountantStamp}
+        showCompanyStamp={showCompanyStamp} setShowCompanyStamp={setShowCompanyStamp}
+        showSignature={showSignature} setShowSignature={setShowSignature} />
 
       <div className="pt-2 border-t border-gray-100 flex justify-end">
         <PrintButton onClick={handlePrint} />
@@ -100,34 +104,29 @@ function BlankSheetTab() {
   );
 }
 
-// محدد الختم (بدون / ختم المحاسب / ختم الشركة) والتوقيع - اختياريين تمامًا،
-// وبتختارهم كل مرة تطبع فيها، مش بيتحفظوا زي باقي شكل الورقة.
-function SignStampControls({ stampType, setStampType, showSignature, setShowSignature }) {
+// محدد الختم والتوقيع - اختياريين تمامًا، كل واحد فيهم مستقل، تقدر تضيف
+// ختم المحاسب وختم الشركة مع بعض في نفس الورقة. بتختارهم كل مرة تطبع فيها،
+// مش بيتحفظوا زي باقي شكل الورقة.
+function SignStampControls({ showAccountantStamp, setShowAccountantStamp, showCompanyStamp, setShowCompanyStamp, showSignature, setShowSignature }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-2">الختم والتوقيع (اختياري)</label>
       <div className="flex flex-wrap gap-4 items-center">
-        <div className="flex gap-3">
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input type="radio" name="stampType" checked={stampType === 'none'} onChange={() => setStampType('none')} />
-            بدون ختم
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input type="radio" name="stampType" checked={stampType === 'accountant'} onChange={() => setStampType('accountant')} />
-            ختم المحاسب
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input type="radio" name="stampType" checked={stampType === 'company'} onChange={() => setStampType('company')} />
-            ختم الشركة
-          </label>
-        </div>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          <input type="checkbox" checked={showAccountantStamp} onChange={e => setShowAccountantStamp(e.target.checked)} />
+          ختم المحاسب
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          <input type="checkbox" checked={showCompanyStamp} onChange={e => setShowCompanyStamp(e.target.checked)} />
+          ختم الشركة
+        </label>
         <span className="text-gray-300">|</span>
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
           <input type="checkbox" checked={showSignature} onChange={e => setShowSignature(e.target.checked)} />
           إضافة التوقيع
         </label>
       </div>
-      <p className="text-xs text-gray-400 mt-1">مش بيتحفظوا زي باقي الشكل - إنت اللي تختار كل مرة تطبع فيها.</p>
+      <p className="text-xs text-gray-400 mt-1">تقدر تضيف الختمين مع بعض لو حبيت. مش بيتحفظوا زي باقي الشكل - إنت اللي تختار كل مرة تطبع فيها.</p>
     </div>
   );
 }
@@ -148,7 +147,8 @@ function MemosTab() {
   const { printMemos, addPrintMemo, updatePrintMemo, deletePrintMemo } = useApp();
   const [activeId, setActiveId] = useState(null);
   const [draft, setDraft] = useState({ title: '', content: '' });
-  const [stampType, setStampType] = useState('none');
+  const [showAccountantStamp, setShowAccountantStamp] = useState(false);
+  const [showCompanyStamp, setShowCompanyStamp] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -182,7 +182,7 @@ function MemosTab() {
 
   const handlePrint = () => {
     if (!draft.content.trim() && !draft.title.trim()) { alert('المذكرة فاضية.'); return; }
-    printMemo({ title: draft.title, content: draft.content, stampType, showSignature });
+    printMemo({ title: draft.title, content: draft.content, showAccountantStamp, showCompanyStamp, showSignature });
   };
 
   return (
@@ -214,7 +214,10 @@ function MemosTab() {
             <textarea value={draft.content} onChange={e => setDraft(d => ({ ...d, content: e.target.value }))}
               placeholder="اكتب المذكرة هنا..." rows={12}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-right leading-loose resize-y" />
-            <SignStampControls stampType={stampType} setStampType={setStampType} showSignature={showSignature} setShowSignature={setShowSignature} />
+            <SignStampControls
+              showAccountantStamp={showAccountantStamp} setShowAccountantStamp={setShowAccountantStamp}
+              showCompanyStamp={showCompanyStamp} setShowCompanyStamp={setShowCompanyStamp}
+              showSignature={showSignature} setShowSignature={setShowSignature} />
             <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
               <button onClick={handleSave} disabled={saving}
                 className="px-5 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-medium disabled:opacity-50">
@@ -240,17 +243,21 @@ const PRESETS = [
 ];
 
 function PresetsTab() {
-  const [stampType, setStampType] = useState('none');
+  const [showAccountantStamp, setShowAccountantStamp] = useState(false);
+  const [showCompanyStamp, setShowCompanyStamp] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-5">
-      <SignStampControls stampType={stampType} setStampType={setStampType} showSignature={showSignature} setShowSignature={setShowSignature} />
+      <SignStampControls
+        showAccountantStamp={showAccountantStamp} setShowAccountantStamp={setShowAccountantStamp}
+        showCompanyStamp={showCompanyStamp} setShowCompanyStamp={setShowCompanyStamp}
+        showSignature={showSignature} setShowSignature={setShowSignature} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
         {PRESETS.map(p => (
           <div key={p.type} className="border-2 rounded-xl p-4 text-center space-y-3" style={{ borderColor: p.color }}>
             <div className="text-white font-bold py-2 rounded-lg" style={{ background: p.color }}>{p.label}</div>
-            <button onClick={() => printPresetReceipt({ type: p.type, stampType, showSignature })}
+            <button onClick={() => printPresetReceipt({ type: p.type, showAccountantStamp, showCompanyStamp, showSignature })}
               className="w-full py-2 rounded-lg border font-medium text-sm transition hover:bg-gray-50"
               style={{ borderColor: p.color, color: p.color }}>
               طباعة

@@ -113,6 +113,10 @@ const MAPS = {
     ['id', 'id'], ['title', 'title'], ['content', 'content'],
     ['createdAt', 'created_at'], ['updatedAt', 'updated_at'],
   ],
+  reminders: [
+    ['id', 'id'], ['text', 'text'], ['kind', 'kind'], ['dueDate', 'due_date'],
+    ['done', 'done'], ['doneDate', 'done_date'], ['createdAt', 'created_at'],
+  ],
 };
 
 // UUID foreign-key columns per table: empty strings must become NULL
@@ -191,6 +195,7 @@ const initialState = {
   weeklyBudgets: [],
   workLocations: [],
   printMemos: [],
+  reminders: [],
   payrollRange: { from: '', to: '' },
 };
 
@@ -283,7 +288,7 @@ export function AppProvider({ children }) {
         transfersRes, externalRes, pillarsRes, budgetsRes, budgetHistoryRes,
         paymentsRes, buildingsRes, plotsRes, qrCodesRes, qrAttendanceRes,
         contractorsRes, contractorPaymentsRes, contractorReceiptsRes, payrollRangeRes, housingRes, weeklyBudgetsRes,
-        workLocationsRes, printMemosRes,
+        workLocationsRes, printMemosRes, remindersRes,
       ] = await Promise.all([
         fetchAllRows('workers', { orderBy: { column: 'created_at', ascending: true } }),
         fetchAllRows('attendance'),
@@ -309,6 +314,7 @@ export function AppProvider({ children }) {
         supabase.from('weekly_budgets').select('*'),
         supabase.from('work_locations').select('*'),
         supabase.from('print_memos').select('*'),
+        supabase.from('reminders').select('*'),
       ]);
 
       const results = [
@@ -338,6 +344,9 @@ export function AppProvider({ children }) {
       if (printMemosRes.error) {
         console.warn('print_memos not available yet - run the supabase-print-memos.sql migration:', printMemosRes.error);
       }
+      if (remindersRes.error) {
+        console.warn('reminders not available yet - run the supabase-reminders.sql migration:', remindersRes.error);
+      }
 
       const budgetsMap = { cash: 0, insta: 0 };
       (budgetsRes.data || []).forEach(b => { budgetsMap[b.type] = Number(b.amount) || 0; });
@@ -366,6 +375,7 @@ export function AppProvider({ children }) {
         weeklyBudgets: weeklyBudgetsRes.error ? [] : fromDbList('weekly_budgets', weeklyBudgetsRes.data),
         workLocations: workLocationsRes.error ? [] : fromDbList('work_locations', workLocationsRes.data),
         printMemos: printMemosRes.error ? [] : fromDbList('print_memos', printMemosRes.data),
+        reminders: remindersRes.error ? [] : fromDbList('reminders', remindersRes.data),
         payrollRange: {
           from: payrollRangeRes.data?.date_from || '',
           to: payrollRangeRes.data?.date_to || '',
@@ -971,6 +981,14 @@ export function AppProvider({ children }) {
   const deletePrintMemo = useCallback(
     (id) => deleteRow('print_memos', 'printMemos', id), [deleteRow]);
 
+  // ---------------- تذكيرات وتنبيهات ----------------
+  const addReminder = useCallback(
+    (reminder) => insertRow('reminders', 'reminders', { kind: 'once', done: false, ...reminder }), [insertRow]);
+  const updateReminder = useCallback(
+    (id, data) => updateRow('reminders', 'reminders', id, data), [updateRow]);
+  const deleteReminder = useCallback(
+    (id) => deleteRow('reminders', 'reminders', id), [deleteRow]);
+
   // تعيين مجموعة عمال في مكان عمل بطلب واحد. locationId فاضي = بدون تحديد
   // (قيمة NULL حقيقية، مش صف وهمي). بيأثر على الأيام الجاية بس: سجلات
   // الحضور القديمة (أمبارح وقبله) بتفضل على مكانها وقت التسجيل من غير ما
@@ -1115,6 +1133,9 @@ export function AppProvider({ children }) {
     addPrintMemo,
     updatePrintMemo,
     deletePrintMemo,
+    addReminder,
+    updateReminder,
+    deleteReminder,
     updateBudget,
     addPayment,
     deletePayment,

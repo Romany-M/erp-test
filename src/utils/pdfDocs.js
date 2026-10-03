@@ -13,37 +13,37 @@ import {
 const SIGN_STAMP_CSS = `
   table.sigs { width: 100%; border-collapse: collapse; margin-top: 10px; page-break-inside: avoid; }
   table.sigs td { vertical-align: middle; padding: 0 7px; }
-  .sig-box { position: relative; height: 28mm; border: 1.5px solid ${NAVY}; border-radius: 9px; overflow: hidden; }
+  .sig-box { position: relative; height: 36mm; border: 1.5px solid ${NAVY}; border-radius: 9px; overflow: hidden; }
   .sig-h { background: ${NAVY}; color: #fff; text-align: center; font-weight: 800; font-size: 12.5px; padding: 4px; }
-  .sig-img { display: block; margin: 4mm auto 0; height: 14mm; width: auto; }
+  .sig-img { display: block; margin: 5mm auto 0; height: 18mm; width: auto; }
   .stamp { text-align: center; }
-  .stamp img { width: 28mm; height: 28mm; transform: rotate(-6deg); }
+  .stamp img { width: 36mm; height: 36mm; max-width: 100%; transform: rotate(-6deg); }
 `;
 
-// stampType: 'none' | 'accountant' (ختم المحاسب) | 'company' (ختم الشركة الرسمي)
-function stampInfo(stampType) {
-  if (stampType === 'company') return { uri: COMPANY_STAMP_DATA_URI, alt: 'ختم الشركة' };
-  if (stampType === 'accountant') return { uri: PDF_STAMP_DATA_URI, alt: 'ختم المحاسب' };
-  return null;
-}
-
 // بناء صف "التوقيع / الختم" الاختياري - بيستخدمه أي ورقة طباعة في النظام.
-function signStampHtml(stampType, showSignature) {
-  const stamp = stampInfo(stampType);
+// الاتنين (ختم المحاسب وختم الشركة) ممكن يظهروا مع بعض، مع التوقيع كمان،
+// كل واحد ياخد مساحته كاملة من غير ما حاجة تتقص.
+function signStampHtml(showAccountantStamp, showCompanyStamp, showSignature) {
   const cells = [];
   if (showSignature) {
     cells.push(`
-      <td style="width:${stamp ? '50%' : '100%'}">
+      <td>
         <div class="sig-box">
           <div class="sig-h">التوقيع</div>
           <img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" />
         </div>
       </td>`);
   }
-  if (stamp) {
-    cells.push(`<td class="stamp" style="width:${showSignature ? '50%' : '100%'}"><img src="${stamp.uri}" alt="${stamp.alt}" /></td>`);
+  if (showAccountantStamp) {
+    cells.push(`<td class="stamp"><img src="${PDF_STAMP_DATA_URI}" alt="ختم المحاسب" /></td>`);
   }
-  return cells.length ? `<table class="sigs"><tr>${cells.join('')}</tr></table>` : '';
+  if (showCompanyStamp) {
+    cells.push(`<td class="stamp"><img src="${COMPANY_STAMP_DATA_URI}" alt="ختم الشركة" /></td>`);
+  }
+  if (!cells.length) return '';
+  const w = (100 / cells.length).toFixed(1);
+  const sized = cells.map(c => c.replace('<td', `<td style="width:${w}%"`));
+  return `<table class="sigs"><tr>${sized.join('')}</tr></table>`;
 }
 
 export const ACCOUNTANT_NAME = 'روماني مكرم';
@@ -412,7 +412,7 @@ export function printAttendanceRollSheet({ workers, days, weekLabel }) {
 // 6) ورقة طباعة عامة (قسم "طباعة"): نفس شكل الشركة الثابت، بس الخانات
 //    والمسلسل وعدد الصفوف تحت تحكم المستخدم بالكامل. صفوف فاضية يملاها بخط اليد.
 // ============================================================================
-export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, stampType, showSignature }) {
+export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, showAccountantStamp, showCompanyStamp, showSignature }) {
   const cols = (columns || []).filter(c => c.trim());
   const colCount = cols.length + (showSerial ? 1 : 0);
 
@@ -441,14 +441,14 @@ export function buildCustomSheetHtml({ title, columns, showSerial, rowCount, sta
       <thead><tr>${headers}</tr></thead>
       <tbody>${rows || `<tr><td colspan="${colCount || 1}" class="muted">لا توجد خانات</td></tr>`}</tbody>
     </table>
-    ${signStampHtml(stampType, showSignature)}
+    ${signStampHtml(showAccountantStamp, showCompanyStamp, showSignature)}
     <div class="doc-foot">${COMPANY_NAME} — تاريخ الطباعة: ${dateAr(todayISO())}</div>`;
 }
 
-export function printCustomSheet({ title, columns, showSerial, rowCount, stampType, showSignature }) {
+export function printCustomSheet({ title, columns, showSerial, rowCount, showAccountantStamp, showCompanyStamp, showSignature }) {
   return openPrintWindow({
     title: title || 'ورقة-طباعة',
-    body: buildCustomSheetHtml({ title, columns, showSerial, rowCount, stampType, showSignature }),
+    body: buildCustomSheetHtml({ title, columns, showSerial, rowCount, showAccountantStamp, showCompanyStamp, showSignature }),
     css: ROLL_CSS + SIGN_STAMP_CSS,
   });
 }
@@ -461,18 +461,18 @@ const MEMO_CSS = `
   .memo-body { font-size: 13.5px; line-height: 2; color: #1e293b; white-space: pre-wrap; min-height: 60mm; padding: 4px 2px; }
 `;
 
-export function buildMemoHtml({ title, content, stampType, showSignature }) {
+export function buildMemoHtml({ title, content, showAccountantStamp, showCompanyStamp, showSignature }) {
   return `
     ${letterheadHtml(title || 'مذكرة')}
     <div class="memo-body">${esc(content || '')}</div>
-    ${signStampHtml(stampType, showSignature)}
+    ${signStampHtml(showAccountantStamp, showCompanyStamp, showSignature)}
     <div class="doc-foot">${COMPANY_NAME} — تاريخ الطباعة: ${dateAr(todayISO())}</div>`;
 }
 
-export function printMemo({ title, content, stampType, showSignature }) {
+export function printMemo({ title, content, showAccountantStamp, showCompanyStamp, showSignature }) {
   return openPrintWindow({
     title: title || 'مذكرة',
-    body: buildMemoHtml({ title, content, stampType, showSignature }),
+    body: buildMemoHtml({ title, content, showAccountantStamp, showCompanyStamp, showSignature }),
     css: MEMO_CSS + SIGN_STAMP_CSS,
   });
 }
@@ -516,7 +516,7 @@ const PRESET_TYPES = {
   },
 };
 
-export function buildPresetReceiptHtml({ type, stampType, showSignature }) {
+export function buildPresetReceiptHtml({ type, showAccountantStamp, showCompanyStamp, showSignature }) {
   const preset = PRESET_TYPES[type] || PRESET_TYPES.cash;
   const fieldsHtml = preset.fields.map(f => `
     <div class="pr-field">
@@ -524,6 +524,8 @@ export function buildPresetReceiptHtml({ type, stampType, showSignature }) {
       <div class="pr-field-blank"></div>
     </div>`).join('');
 
+  // صف "توقيع المستلم" ثابت زي التصميم الأصلي، وتحته صف الختم/التوقيع
+  // المشترك (نفس اللي في باقي النظام) عشان الختم يطلع كامل من غير ما يتقص.
   return `
     <div class="pr" style="--pc:${preset.color}">
       ${letterheadHtml('')}
@@ -535,20 +537,16 @@ export function buildPresetReceiptHtml({ type, stampType, showSignature }) {
       <div class="pr-fields">${fieldsHtml}</div>
       <div class="pr-sigs">
         <div class="pr-sig-box"><div class="pr-sig-h">توقيع المستلم</div></div>
-        ${stampInfo(stampType) ? `<div class="pr-sig-box" style="flex:0 0 26mm; text-align:center; border:none;"><img src="${stampInfo(stampType).uri}" alt="${stampInfo(stampType).alt}" style="width:24mm;height:24mm;margin-top:3mm;" /></div>` : ''}
-        <div class="pr-sig-box">
-          <div class="pr-sig-h">توقيع المسؤول</div>
-          ${showSignature ? `<img class="sig-img" src="${MANAGER_SIGNATURE_DATA_URI}" alt="التوقيع" style="margin-top:2mm;height:12mm;" />` : ''}
-        </div>
       </div>
+      ${signStampHtml(showAccountantStamp, showCompanyStamp, showSignature)}
     </div>`;
 }
 
-export function printPresetReceipt({ type, stampType, showSignature }) {
+export function printPresetReceipt({ type, showAccountantStamp, showCompanyStamp, showSignature }) {
   const preset = PRESET_TYPES[type] || PRESET_TYPES.cash;
   return openPrintWindow({
     title: preset.title,
-    body: buildPresetReceiptHtml({ type, stampType, showSignature }),
+    body: buildPresetReceiptHtml({ type, showAccountantStamp, showCompanyStamp, showSignature }),
     css: PRESET_CSS + SIGN_STAMP_CSS,
   });
 }
